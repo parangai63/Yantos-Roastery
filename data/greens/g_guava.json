@@ -1,0 +1,10 @@
+{
+  "active": true,
+  "category": "Espresso",
+  "id": "g_guava",
+  "minKg": 5,
+  "minRoastedKg": 3,
+  "name": "Guava",
+  "price": 355000,
+  "supplier": ""
+}

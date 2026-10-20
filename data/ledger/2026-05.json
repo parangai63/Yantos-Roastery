@@ -1,0 +1,89 @@
+{
+  "entries": {
+    "xl-10-out": {
+      "amount": 6000000,
+      "at": "2026-05-01T00:00:00.007Z",
+      "by": "",
+      "category": "Bahan Baku (Green Bean)",
+      "date": "2026-05-01",
+      "desc": "Bayar Kerinci Komersil",
+      "dir": "out",
+      "note": "",
+      "src": "excel",
+      "type": "kas"
+    },
+    "xl-11-out": {
+      "amount": 115000,
+      "at": "2026-05-05T00:00:00.003Z",
+      "by": "",
+      "category": "Pembelian Alat",
+      "date": "2026-05-05",
+      "desc": "Beli Ember Roasting",
+      "dir": "out",
+      "note": "",
+      "src": "excel",
+      "type": "kas"
+    },
+    "xl-12-out": {
+      "amount": 4774000,
+      "at": "2026-05-06T00:00:00.003Z",
+      "by": "",
+      "category": "Bahan Baku (Green Bean)",
+      "date": "2026-05-06",
+      "desc": "Pembayaran Prau",
+      "dir": "out",
+      "note": "",
+      "src": "excel",
+      "type": "kas"
+    },
+    "xl-13-out": {
+      "amount": 1672500,
+      "at": "2026-05-12T00:00:00.003Z",
+      "by": "",
+      "category": "Bahan Baku (Green Bean)",
+      "date": "2026-05-12",
+      "desc": "Bayar Robusta Ngantang",
+      "dir": "out",
+      "note": "",
+      "src": "excel",
+      "type": "kas"
+    },
+    "xl-14-out": {
+      "amount": 1400000,
+      "at": "2026-05-12T00:00:00.005Z",
+      "by": "",
+      "category": "Distribusi/Dividen (Realisasi)",
+      "date": "2026-05-12",
+      "desc": "Pembagian Dividen",
+      "dir": "out",
+      "note": "",
+      "src": "excel",
+      "type": "kas"
+    },
+    "xl-8-out": {
+      "amount": 2361360,
+      "at": "2026-05-01T00:00:00.003Z",
+      "by": "",
+      "category": "Bahan Baku (Green Bean)",
+      "date": "2026-05-01",
+      "desc": "Bayar Wash Mandailing",
+      "dir": "out",
+      "note": "",
+      "src": "excel",
+      "type": "kas"
+    },
+    "xl-9-out": {
+      "amount": 6987000,
+      "at": "2026-05-01T00:00:00.005Z",
+      "by": "",
+      "category": "Bahan Baku (Green Bean)",
+      "date": "2026-05-01",
+      "desc": "Bayar Arjuna Kusuma",
+      "dir": "out",
+      "note": "",
+      "src": "excel",
+      "type": "kas"
+    }
+  },
+  "month": "2026-05"
+}

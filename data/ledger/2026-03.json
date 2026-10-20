@@ -1,0 +1,17 @@
+{
+  "entries": {
+    "xl-1-in": {
+      "amount": 180000,
+      "at": "2026-03-01T00:00:00.002Z",
+      "by": "",
+      "category": "Penjualan Kopi",
+      "date": "2026-03-01",
+      "desc": "Penjualan Beans (2 pcs)",
+      "dir": "in",
+      "note": "",
+      "src": "excel",
+      "type": "kas"
+    }
+  },
+  "month": "2026-03"
+}

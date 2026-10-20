@@ -1,0 +1,10 @@
+{
+  "active": true,
+  "category": "Filter",
+  "id": "g_strawberry-jam",
+  "minKg": 3,
+  "minRoastedKg": 1.5,
+  "name": "Strawberry Jam",
+  "price": 375000,
+  "supplier": ""
+}

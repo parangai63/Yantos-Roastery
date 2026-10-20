@@ -1,0 +1,1013 @@
+/* ================= helpers ================= */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const RP = new Intl.NumberFormat('id-ID', {style:'currency', currency:'IDR', maximumFractionDigits:0});
+const rp = n => RP.format(Math.round(n || 0)).replace(/ /g, ' ');
+const rps = n => (n < 0 ? '−' : '') + rp(Math.abs(n));
+const nf = (n, d = 2) => new Intl.NumberFormat('id-ID', {maximumFractionDigits:d}).format(n || 0);
+const pct = n => isFinite(n) ? nf(n * 100, 1) + '%' : '–';
+const pad = n => String(n).padStart(2, '0');
+const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; };
+const thisMonth = () => today().slice(0, 7);
+const BULAN = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+const mLabel = m => BULAN[+m.slice(5, 7) - 1] + ' ' + m.slice(0, 4);
+const mShort = m => BULAN[+m.slice(5, 7) - 1].slice(0, 3) + ' ' + m.slice(2, 4);
+const dLabel = d => d ? (+d.slice(8, 10)) + ' ' + BULAN[+d.slice(5, 7) - 1].slice(0, 3) + ' ' + d.slice(2, 4) : '';
+const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const addMonths = (m, k) => { let y = +m.slice(0, 4), mo = +m.slice(5, 7) + k; while (mo < 1) { mo += 12; y--; } while (mo > 12) { mo -= 12; y++; } return y + '-' + pad(mo); };
+const short = n => { const a = Math.abs(n), s = n < 0 ? '−' : ''; if (a >= 1e9) return s + nf(a/1e9, 1) + ' M'; if (a >= 1e6) return s + nf(a/1e6, 1) + ' jt'; if (a >= 1e3) return s + nf(a/1e3, 0) + ' rb'; return s + nf(a, 0); };
+const sizeLabel = g => g >= 1000 ? nf(g / 1000, 2) + ' kg' : nf(g, 0) + ' g';
+const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+
+/* ================= vocab (dari Excel Yantos) ================= */
+const CATS_IN = ['Penjualan Kopi','Jasa Roasting','Merchandise','Modal/Setoran Pemilik','Pendapatan Lainnya'];
+const CATS_OUT = ['Bahan Baku (Green Bean)','Packaging','Listrik & Air','Sewa Tempat','Payment Editor','Payment Tukang','Payment Roaster','Payment Admin','Payment Karyawan Operasional','Pembelian Alat','Distribusi/Dividen (Realisasi)','Pengeluaran Lainnya'];
+const NON_OP = ['Modal/Setoran Pemilik','Distribusi/Dividen (Realisasi)'];
+const USE_CATS = ['Operasional Kopi Parang','Transfer Stock Cabang','Sampling/Cupping','Kalibrasi/Susut','Penjualan Cust (uang dicatat di kas)','Lain-lain'];
+const GROUPS = ['Espresso','Filter','Blend','Paket B2B','Lainnya'];
+const CHANNELS = ['Kafe / B2B','Toko / langsung','Online / marketplace','Event','Reseller','Lainnya'];
+const METHODS = ['Transfer bank','Tunai','QRIS','Marketplace','Lainnya'];
+const T_LABEL = {green:'Green bean', roasted:'Roasted bean', blend:'Blend', pack:'Kemasan'};
+const T_UNIT = {green:'kg', roasted:'kg', blend:'kg', pack:'pcs'};
+const T_SRC = {green:'greens', roasted:'greens', blend:'blends', pack:'packs'};
+const TYPE = {
+  opening:{label:'Saldo awal', cls:''}, green_in:{label:'Beli green', cls:'bean'}, pack_in:{label:'Beli kemasan', cls:''},
+  roast:{label:'Roasting', cls:'roast'}, blend:{label:'Racik blend', cls:'roast'}, usage:{label:'Stok keluar', cls:'warn'},
+  sale:{label:'Penjualan', cls:'ok'}, kas:{label:'Kas', cls:''}, adjust:{label:'Stok opname', cls:'warn'}
+};
+const DEF_CONF = {
+  bizName:'Yantos Roastery',
+  shares:[{label:'Dana Yayasan Yantos', pct:2.5}, {label:'Transfer Pak Munir', pct:40}],
+  savingMin:1000000, savingPct:10, basis:'kas',
+  routine:[{label:'Payment Editor', amount:200000}, {label:'Payment Tukang', amount:100000}, {label:'Payment Roaster', amount:1000000}, {label:'Payment Admin', amount:200000}, {label:'Payment Karyawan Operasional', amount:100000}]
+};
+const TABS = [['ringkasan','Ringkasan'],['stok','Stok'],['produksi','Produksi'],['penjualan','Penjualan'],['keuangan','Kas & Pembelian'],['laporan','Laporan'],['master','Data Master']];
+
+/* ================= state ================= */
+const S = { greens:{}, blends:{}, packs:{}, products:{}, config:{}, ledger:{}, entries:[], C:null, loaded:new Set(), offline:false };
+const UI = { tab:'ringkasan', month:thisMonth(), stokSub:'green', stokFilter:'all', stokQ:'', prodSub:'roast', keuSub:'kas', lapSub:'bulanan', masterSub:'green', saleFilter:'month' };
+let db = null, user = null, dl = null, uid = null, canWrite = true;
+const savedTab = store.get('rs.tab'); if (savedTab && TABS.some(t => t[0] === savedTab)) UI.tab = savedTab;
+const hashTab = (location.hash || '').slice(1); if (TABS.some(t => t[0] === hashTab)) UI.tab = hashTab;
+const conf = () => { const c = {...DEF_CONF, ...S.config}; if (!Array.isArray(c.shares)) c.shares = DEF_CONF.shares; if (!Array.isArray(c.routine)) c.routine = DEF_CONF.routine; return c; };
+
+const ready = () => ['greens','blends','packs','products','ledger'].every(k => S.loaded.has(k));
+const activeList = o => Object.values(o).filter(x => x.active !== false).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'id'));
+const gName = id => S.greens[id]?.name || 'Green bean terhapus';
+const bName = id => S.blends[id]?.name || 'Blend terhapus';
+const pName = id => S.packs[id]?.name || 'Kemasan terhapus';
+const itemName = (t, id) => t === 'pack' ? pName(id) : t === 'blend' ? bName(id) : gName(id);
+const itemLabel = (t, id) => itemName(t, id) + (t === 'roasted' ? ' (roasted)' : t === 'green' ? ' (green)' : '');
+
+/* ================= engine ================= */
+const zero = {qty:0, val:0, last:0};
+const avgOf = s => s.qty > 1e-9 ? s.val / s.qty : s.last;
+const stk = (k, id) => (S.C && S.C.st[k][id]) || zero;
+const newMonth = () => ({cin:0, cout:0, cat:{}, nonIn:0, nonOut:0, sales:0, disc:0, ship:0, cogs:0, orders:0, kgSold:0, roastIn:0, roastOut:0, blendKg:0, usage:{}, adj:0, buyGreen:0, buyPack:0});
+const mOf = m => (S.C && S.C.M[m]) || newMonth();
+function makeCost(st, roast) {
+  const cost = (t, id) => {
+    const s = st[t] && st[t][id]; const a = s ? avgOf(s) : 0; if (a) return a;
+    if (t === 'green') return +(S.greens[id]?.price) || 0;
+    if (t === 'roasted') { const r = roast[id]; const y = r && r.in ? r.out / r.in : 0.8; const gc = cost('green', id); return gc ? gc / y : 0; }
+    if (t === 'blend') return +(S.blends[id]?.cogs) || 0;
+    if (t === 'pack') return +(S.packs[id]?.price) || 0;
+    return 0;
+  };
+  return cost;
+}
+function compute() {
+  const E = S.entries.slice().sort((a, b) => (a.date + (a.at || '')).localeCompare(b.date + (b.at || '')));
+  const st = {green:{}, roasted:{}, blend:{}, pack:{}};
+  const roast = {}, M = {}, recv = [], pay = [], soldBy = {}, cash = [];
+  const cost = makeCost(st, roast);
+  const g = (k, id) => st[k][id] || (st[k][id] = {qty:0, val:0, last:0});
+  const take = (k, id, q) => { const s = g(k, id); const a = avgOf(s) || cost(k, id); s.qty -= q; s.val -= a * q; if (s.qty <= 1e-9) s.val = s.qty * a; if (a) s.last = a; return a * q; };
+  const put = (k, id, q, v) => { const s = g(k, id); s.qty += q; s.val += v; if (s.qty > 1e-9) s.last = s.val / s.qty; };
+  const mo = d => { const k = String(d || '').slice(0, 7); return M[k] || (M[k] = newMonth()); };
+  const flow = (date, dir, cat, amt, desc, e) => {
+    if (!amt) return; const m = mo(date); const c = m.cat[cat] || (m.cat[cat] = {in:0, out:0});
+    if (dir === 'in') { m.cin += amt; c.in += amt; if (NON_OP.includes(cat)) m.nonIn += amt; }
+    else { m.cout += amt; c.out += amt; if (NON_OP.includes(cat)) m.nonOut += amt; }
+    cash.push({date, dir, cat, amt, desc, e});
+  };
+  for (const e of E) {
+    const m = mo(e.date);
+    switch (e.type) {
+      case 'opening': if (st[e.target]) put(e.target, e.itemId, +e.qty || 0, +e.value || 0); break;
+      case 'green_in': case 'pack_in': {
+        const isG = e.type === 'green_in', t = +e.total || 0;
+        put(isG ? 'green' : 'pack', isG ? e.greenId : e.packId, +(isG ? e.kg : e.qty) || 0, t);
+        if (isG) m.buyGreen += t; else m.buyPack += t;
+        if (e.paid) flow(e.paidDate || e.date, 'out', isG ? 'Bahan Baku (Green Bean)' : 'Packaging', t, isG ? `Beli green ${gName(e.greenId)} ${nf(e.kg)} kg${e.supplier ? ' (' + e.supplier + ')' : ''}` : `Beli ${pName(e.packId)} ${nf(e.qty, 0)} pcs`, e);
+        else pay.push(e);
+        break; }
+      case 'roast': {
+        const i = +e.inKg || 0, o = +e.outKg || 0;
+        const v = take('green', e.greenId, i); put('roasted', e.greenId, o, v);
+        const r = roast[e.greenId] || (roast[e.greenId] = {in:0, out:0}); r.in += i; r.out += o;
+        m.roastIn += i; m.roastOut += o; break; }
+      case 'blend': {
+        let v = 0, kg = 0; (e.parts || []).forEach(p => { const q = +p.kg || 0; v += take('roasted', p.greenId, q); kg += q; });
+        put('blend', e.blendId, kg, v); m.blendKg += kg; e._kg = kg; break; }
+      case 'usage': {
+        const q = +e.kg || 0; let v = (st[e.target] ? take(e.target, e.itemId, q) : 0);
+        if (e.packId && e.packQty) v += take('pack', e.packId, +e.packQty || 0);
+        const u = m.usage[e.category] || (m.usage[e.category] = {kg:0, val:0}); u.kg += q; u.val += v; e._val = v; break; }
+      case 'sale': {
+        let c = 0; const k = e.date.slice(0, 7); const sb = soldBy[k] || (soldBy[k] = {});
+        (e.items || []).forEach(it => {
+          const q = +it.qty || 0, p = +it.price || 0, kg = (+it.grams || 0) * q / 1000;
+          c += take(it.kind === 'blend' ? 'blend' : 'roasted', it.beanId, kg);
+          if (it.packId) c += take('pack', it.packId, q);
+          m.sales += q * p; m.kgSold += kg;
+          const s = sb[it.productId] || (sb[it.productId] = {qty:0, rev:0, name:it.name}); s.qty += q; s.rev += q * p;
+        });
+        e._cogs = c; m.cogs += c; m.disc += +e.discount || 0; m.ship += +e.shipping || 0; m.orders++;
+        if (e.paid) flow(e.paidDate || e.date, 'in', 'Penjualan Kopi', +e.total || 0, `Penjualan ${e.customer || 'pelanggan umum'}`, e); else recv.push(e);
+        break; }
+      case 'kas': flow(e.date, e.dir === 'in' ? 'in' : 'out', e.category || 'Pengeluaran Lainnya', +e.amount || 0, e.desc || e.category, e); break;
+      case 'adjust': { if (!st[e.target]) break; const d = +e.delta || 0;
+        if (d < 0) m.adj -= take(e.target, e.itemId, -d); else { const a = cost(e.target, e.itemId); put(e.target, e.itemId, d, d * a); m.adj += d * a; } break; }
+    }
+  }
+  cash.sort((a, b) => (a.date + (a.e.at || '')).localeCompare(b.date + (b.e.at || '')));
+  let bal = 0; for (const c of cash) { bal += c.dir === 'in' ? c.amt : -c.amt; c.bal = bal; }
+  const inv = {green:0, roasted:0, blend:0, pack:0};
+  for (const k in st) for (const id in st[k]) inv[k] += Math.max(0, st[k][id].val);
+  return {st, M, roast, recv, pay, soldBy, cash, bal, inv, invT:inv.green + inv.roasted + inv.blend + inv.pack, cost};
+}
+const costOf = (t, id) => S.C ? S.C.cost(t, id) : 0;
+function cashUntil(month) { let c = 0; if (!S.C) return 0; for (const k in S.C.M) if (k <= month) c += S.C.M[k].cin - S.C.M[k].cout; return c; }
+function yieldOf(gid) { const r = S.C && S.C.roast[gid]; return r && r.in ? r.out / r.in : 0; }
+const labaOf = x => conf().basis === 'op' ? (x.cin - x.nonIn) - (x.cout - x.nonOut) : x.cin - x.cout;
+function distrib(laba) {
+  const c = conf();
+  const shares = c.shares.map(s => ({label:s.label, pct:+s.pct || 0, amt:laba > 0 ? laba * (+s.pct || 0) / 100 : 0}));
+  const saving = Math.max(+c.savingMin || 0, laba > 0 ? laba * (+c.savingPct || 0) / 100 : 0);
+  return {shares, saving, sisa:laba - shares.reduce((a, s) => a + s.amt, 0) - saving};
+}
+function productCost(p) {
+  const kg = (+p.grams || 0) / 1000;
+  let c = kg * costOf(p.kind === 'blend' ? 'blend' : 'roasted', p.beanId);
+  if (p.packId) c += costOf('pack', p.packId);
+  return c;
+}
+function minOf(t, x) { return t === 'roasted' ? +x.minRoastedKg || 0 : t === 'pack' ? +x.minQty || 0 : +x.minKg || 0; }
+function stockStatus(qty, min) {
+  if (qty <= 1e-6) return '<span class="pill bad">Habis</span>';
+  if (min && qty < min) return '<span class="pill warn">Menipis</span>';
+  return '<span class="pill ok">Aman</span>';
+}
+function alertsList() {
+  const out = [];
+  [['green','greens'],['roasted','greens'],['blend','blends'],['pack','packs']].forEach(([t, src]) => activeList(S[src]).forEach(x => {
+    const q = stk(t, x.id).qty, min = minOf(t, x);
+    if (min && q < min) out.push({t, name:x.name, q, min, bad:q <= 1e-6});
+  }));
+  return out.sort((a, b) => (a.bad - b.bad) || (a.q / a.min) - (b.q / b.min));
+}
+
+/* ================= describe ================= */
+function describe(e) {
+  switch (e.type) {
+    case 'opening': return {text:`${itemLabel(e.target, e.itemId)} · ${nf(e.qty)} ${T_UNIT[e.target]}`, amt:null};
+    case 'green_in': return {text:`${gName(e.greenId)} · ${nf(e.kg)} kg${e.supplier ? ' dari ' + e.supplier : ''}`, amt:-(+e.total || 0)};
+    case 'pack_in': return {text:`${pName(e.packId)} · ${nf(e.qty, 0)} pcs${e.supplier ? ' dari ' + e.supplier : ''}`, amt:-(+e.total || 0)};
+    case 'roast': { const s = e.inKg ? 1 - e.outKg / e.inKg : 0; return {text:`${gName(e.greenId)} · ${nf(e.inKg)} → ${nf(e.outKg)} kg (susut ${pct(s)})${e.batch ? ' · ' + e.batch : ''}`, amt:null}; }
+    case 'blend': return {text:`${bName(e.blendId)} · ${nf((e.parts || []).reduce((a, p) => a + (+p.kg || 0), 0))} kg dari ${(e.parts || []).map(p => `${gName(p.greenId)} ${nf(p.kg)}`).join(' + ')}`, amt:null};
+    case 'usage': return {text:`${itemLabel(e.target, e.itemId)} ${nf(e.kg)} kg · ${e.category}${e.packId ? ` · ${nf(e.packQty, 0)}× ${pName(e.packId)}` : ''}${e.note ? ' · ' + e.note : ''}`, amt:null};
+    case 'sale': return {text:`${e.customer || 'Pelanggan umum'} · ${(e.items || []).map(i => `${nf(i.qty, 0)}× ${i.name}`).join(', ')}`, amt:+e.total || 0};
+    case 'kas': return {text:`${e.desc || e.category}${e.desc ? ' · ' + e.category : ''}`, amt:(e.dir === 'in' ? 1 : -1) * (+e.amount || 0)};
+    case 'adjust': return {text:`${itemLabel(e.target, e.itemId)} · ${e.delta > 0 ? '+' : ''}${nf(e.delta)} ${T_UNIT[e.target] || ''}${e.note ? ' · ' + e.note : ''}`, amt:null};
+  }
+  return {text:e.type, amt:null};
+}
+function statusPill(e) {
+  if (e.type === 'sale') { if (e.paid) return '<span class="pill ok">Lunas</span>'; if (e.due && e.due < today()) return '<span class="pill bad">Lewat tempo</span>'; return '<span class="pill warn">Belum lunas</span>'; }
+  if (e.type === 'green_in' || e.type === 'pack_in') return e.paid ? '<span class="pill ok">Lunas</span>' : '<span class="pill warn">Belum dibayar</span>';
+  return '';
+}
+const monthEntries = (m, types) => S.entries.filter(e => e.date.startsWith(m) && (!types || types.includes(e.type))).sort((a, b) => (b.date + (b.at || '')).localeCompare(a.date + (a.at || '')));
+const who = e => e.by ? `<span class="who" data-uid="${esc(e.by)}"></span>` : '';
+function entryActions(e) {
+  let h = '';
+  if (!e.paid && ['sale','green_in','pack_in'].includes(e.type)) h += `<button class="btn sm ghost" data-paid="${esc(e.id)}">Tandai lunas</button>`;
+  h += `<button class="btn sm ghost danger" data-del="${esc(e.id)}">Hapus</button>`;
+  return `<div class="actions w-only">${h}</div>`;
+}
+function feed(list, emptyMsg, limit) {
+  if (!list.length) return `<p class="empty">${emptyMsg}</p>`;
+  const shown = limit ? list.slice(0, limit) : list;
+  return '<div class="feed">' + shown.map(e => { const d = describe(e); return `<div class="it">
+    <span class="pill ${TYPE[e.type]?.cls || ''}">${esc(TYPE[e.type]?.label || e.type)}</span>
+    <div class="txt">${esc(d.text)}<div class="meta">${dLabel(e.date)} ${who(e)} ${statusPill(e)}</div></div>
+    <div style="display:grid;justify-items:end;gap:4px">${d.amt == null ? '' : `<span class="amt ${d.amt > 0 ? 'in' : ''}">${d.amt > 0 ? '+' : '−'}${rp(Math.abs(d.amt))}</span>`}${entryActions(e)}</div>
+  </div>`; }).join('') + '</div>' + (limit && list.length > limit ? `<p class="hint">+${list.length - limit} catatan lain</p>` : '');
+}
+
+/* ================= writes ================= */
+let chain = Promise.resolve();
+const serial = fn => { const p = chain.then(fn); chain = p.catch(() => {}); return p; };
+async function retry(fn) { try { return await fn(); } catch (e) { if (e && e.code === 'unavailable') { await new Promise(r => setTimeout(r, 400 + Math.random() * 600)); return fn(); } throw e; } }
+const partNo = id => { const i = id.indexOf('_'); return i < 0 ? 1 : +id.slice(i + 1) || 1; };
+function ledgerTarget(month) {
+  const parts = Object.keys(S.ledger).filter(id => id === month || id.startsWith(month + '_')).sort((a, b) => partNo(a) - partNo(b));
+  if (!parts.length) return {id:month, exists:false};
+  const last = parts[parts.length - 1];
+  if (JSON.stringify(S.ledger[last]).length > 200000) return {id:month + '_' + (partNo(last) + 1), exists:false};
+  return {id:last, exists:true};
+}
+function addEntry(e) {
+  if (!db) return Promise.reject(new Error('Penyimpanan belum tersambung.'));
+  const id = newId(), month = e.date.slice(0, 7);
+  const body = {...e, by:uid || '', at:new Date().toISOString()};
+  return serial(() => retry(async () => {
+    const t = ledgerTarget(month); const ref = db.doc('ledger/' + t.id);
+    if (t.exists) { await ref.update({entries:{[id]:body}}); return; }
+    let lease = {acquired:false};
+    try { lease = await ref.acquire({holder:uid || id, ttlMs:8000}); } catch {}
+    if (!lease.acquired) await new Promise(r => setTimeout(r, 1500));
+    const snap = await ref.get();
+    if (snap.exists) await ref.update({month, entries:{[id]:body}});
+    else await ref.set({month, entries:{[id]:body}});
+  }));
+}
+function patchEntry(e, patch) { return serial(() => retry(() => db.doc('ledger/' + e._doc).update({entries:{[e.id]:patch}}))); }
+function saveDoc(path, data) { return serial(() => retry(() => db.doc(path).set(data))); }
+function updDoc(path, data) { return serial(() => retry(() => db.doc(path).update(data))); }
+function failMsg(err) {
+  const c = err && err.code;
+  if (c === 'invalid_argument') return 'Gagal menyimpan. Akunmu mungkin hanya punya akses lihat.';
+  if (c === 'quota_exceeded') return 'Penyimpanan penuh. Hubungi pemilik untuk merapikan data lama.';
+  if (c === 'resource_exhausted') return 'Terlalu banyak simpan sekaligus. Tunggu sebentar lalu coba lagi.';
+  return 'Gagal menyimpan: ' + (err && err.message || 'koneksi terputus') + '. Coba lagi.';
+}
+
+/* ================= UI basics ================= */
+let toastT;
+function toast(msg, err) { const t = $('#toast'); t.textContent = msg; t.className = err ? 'err' : ''; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, err ? 5000 : 2600); }
+function setStatus(kind, txt) { $('#status').className = 'status ' + kind; $('#statusText').textContent = txt; }
+function stockLabel(t, x) { const q = stk(t, x.id).qty; return `${x.name} · stok ${nf(q, t === 'pack' ? 0 : 2)} ${t === 'pack' ? (x.unit || 'pcs') : 'kg'}`; }
+function refreshSelects(root = document) {
+  $$('select[data-src]', root).forEach(sel => {
+    const src = sel.dataset.src, show = sel.dataset.show, v = sel.value || sel.dataset.want || '';
+    const ph = `<option value="">${esc(sel.dataset.ph || 'Pilih…')}</option>`;
+    let items = activeList(S[src] || {});
+    if (src === 'products') {
+      const byG = {}; items.forEach(p => (byG[p.group || 'Lainnya'] ||= []).push(p));
+      sel.innerHTML = ph + GROUPS.filter(gp => byG[gp]).map(gp => `<optgroup label="${esc(gp)}">${byG[gp].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'id') || a.grams - b.grams).map(p => { const t = p.kind === 'blend' ? 'blend' : 'roasted'; return `<option value="${esc(p.id)}">${esc(p.name)} · ${rp(p.price)} (stok ${nf(stk(t, p.beanId).qty)} kg)</option>`; }).join('')}</optgroup>`).join('');
+    } else {
+      sel.innerHTML = ph + items.map(x => `<option value="${esc(x.id)}">${esc(show ? stockLabel(show, x) : x.name)}</option>`).join('');
+    }
+    if (items.some(x => x.id === v)) { sel.value = v; delete sel.dataset.want; }
+  });
+  const custs = [...new Set(S.entries.filter(e => e.type === 'sale' && e.customer).map(e => e.customer))].sort();
+  $('#custList').innerHTML = custs.map(c => `<option value="${esc(c)}">`).join('');
+  const sups = [...new Set(S.entries.filter(e => e.supplier).map(e => e.supplier))].sort();
+  $('#suppList').innerHTML = sups.map(c => `<option value="${esc(c)}">`).join('');
+}
+const val = (f, n) => (f.elements[n] && f.elements[n].value || '').trim();
+const money = (f, n) => +(val(f, n).replace(/\D/g, '') || 0);
+const numv = (f, n) => parseFloat(val(f, n).replace(',', '.')) || 0;
+const moneyStr = n => n ? Math.round(n).toLocaleString('id-ID') : '';
+const opts = arr => arr.map(x => `<option>${esc(x)}</option>`).join('');
+const catOpts = () => `<optgroup label="Pemasukan">${opts(CATS_IN)}</optgroup><optgroup label="Pengeluaran">${opts(CATS_OUT)}</optgroup>`;
+const seg = (group, cur, items) => `<div class="seg" role="group">${items.map(([k, l]) => `<button type="button" data-seg="${group}" data-val="${k}" aria-pressed="${k === cur}">${l}</button>`).join('')}</div>`;
+async function resolveNames() {
+  if (!user) return;
+  const spans = $$('[data-uid]'); const ids = [...new Set(spans.map(s => s.dataset.uid).filter(Boolean))];
+  if (!ids.length) return;
+  try { const ps = await user.profiles(ids); spans.forEach(s => { const p = ps[s.dataset.uid]; s.textContent = p && p.name ? '· ' + p.name.split(' ')[0] : ''; }); } catch {}
+}
+async function guarded(f, fn, okMsg) {
+  if (!canWrite) { toast('Mode lihat saja: kamu tidak bisa menyimpan.', true); return false; }
+  const b = $('button[type=submit]', f); if (b) b.disabled = true;
+  try { await fn(); toast(okMsg); return true; } catch (err) { toast(failMsg(err), true); return false; } finally { if (b) b.disabled = false; }
+}
+function table(head, rows, foot) {
+  return `<div class="tw"><table><thead><tr>${head.map(h => `<th class="${h[1] ? 'num' : ''}">${h[0]}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody>${foot ? `<tfoot>${foot}</tfoot>` : ''}</table></div>`;
+}
+
+/* ================= shell ================= */
+function renderShell() {
+  $('#tabs').innerHTML = TABS.map(([k, l]) => `<button role="tab" data-tab="${k}" aria-selected="${k === UI.tab}">${l}</button>`).join('');
+  $('#month').value = UI.month;
+}
+function renderTab() {
+  $$('#tabs button').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === UI.tab));
+  const v = VIEWS[UI.tab];
+  v._upd = null;
+  $('#viewTitle').textContent = TABS.find(t => t[0] === UI.tab)[1];
+  $('#periodBox').hidden = !v.period;
+  $('#view').innerHTML = v.html();
+  refreshSelects($('#view'));
+  v.bind && v.bind();
+  refreshView();
+}
+let rafPending = false;
+function changed() {
+  if (rafPending) return; rafPending = true;
+  requestAnimationFrame(() => {
+    rafPending = false;
+    S.C = compute();
+    $('#bizName').textContent = conf().bizName || 'Roastery';
+    refreshSelects($('#view'));
+    refreshView();
+  });
+}
+function refreshView() {
+  if (!S.C) S.C = compute();
+  const v = VIEWS[UI.tab];
+  if (v._upd) v._upd();
+  v.refresh && v.refresh();
+  resolveNames();
+}
+const loadingHTML = () => S.offline ? '<p class="empty">Data belum bisa dimuat. Buka halaman ini di Claude dengan akun yang sudah masuk.</p>' : '<p class="loading">Memuat data…</p>';
+
+/* ================= views ================= */
+const VIEWS = {};
+
+/* ---- Ringkasan ---- */
+VIEWS.ringkasan = {
+  period:true,
+  html: () => `
+    <section class="kpis" id="kpis"></section>
+    <div class="grid2">
+      <section class="panel"><header><h2>Pemasukan vs pengeluaran kas</h2><span class="hint">6 bulan sampai periode terpilih</span></header><div id="chart"></div></section>
+      <section class="panel"><header><h2>Perlu restock</h2><span class="hint" id="alertCount"></span></header><div id="alerts"></div></section>
+    </div>
+    <section class="panel mt"><header><h2>Aktivitas terbaru</h2><span class="hint">Semua orang di tim</span></header><div id="recent"></div></section>`,
+  refresh() {
+    if (!ready()) { $('#kpis').innerHTML = ''; $('#recent').innerHTML = loadingHTML(); $('#alerts').innerHTML = ''; $('#chart').innerHTML = ''; return; }
+    const m = UI.month, x = mOf(m), laba = labaOf(x);
+    const recvT = S.C.recv.reduce((a, e) => a + (+e.total || 0), 0);
+    $('#kpis').innerHTML = [
+      ['Pemasukan', rp(x.cin), mLabel(m), ''],
+      ['Pengeluaran', rp(x.cout), mLabel(m), ''],
+      ['Laba', rps(laba), conf().basis === 'op' ? 'Tanpa modal & dividen' : 'Pemasukan − pengeluaran', laba > 0 ? 'pos' : laba < 0 ? 'neg' : ''],
+      ['Saldo kas', rps(S.C.bal), 'Per hari ini', S.C.bal < 0 ? 'neg' : ''],
+      ['Piutang', rp(recvT), `${S.C.recv.length} order belum dibayar`, ''],
+      ['Nilai stok', rp(S.C.invT), `Green ${short(S.C.inv.green)} · roasted ${short(S.C.inv.roasted)} · blend ${short(S.C.inv.blend)}`, '']
+    ].map(([k, v, s, c]) => `<div class="kpi"><span class="k">${k}</span><span class="v ${c}">${v}</span><span class="s">${s}</span></div>`).join('');
+    const months = [-5, -4, -3, -2, -1, 0].map(k => addMonths(m, k));
+    const inc = months.map(k => mOf(k).cin), out = months.map(k => mOf(k).cout);
+    const max = Math.max(...inc, ...out);
+    if (max <= 0) $('#chart').innerHTML = '<p class="empty">Grafik muncul setelah ada transaksi kas.</p>';
+    else {
+      const raw = max / 4, p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p;
+      const step = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p, top = step * Math.ceil(max / step);
+      const W = 640, H = 240, L = 58, R = 8, T = 10, B = 26, gw = (W - L - R) / 6, bw = Math.min(26, gw * .3);
+      const y = v => T + (H - T - B) * (1 - v / top);
+      let s = `<div class="chart-legend"><span><i style="background:var(--bean)"></i>Pemasukan</span><span><i style="background:var(--roast)"></i>Pengeluaran</span></div><svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Grafik pemasukan dan pengeluaran 6 bulan">`;
+      for (let v = 0; v <= top + 1e-6; v += step) s += `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text class="ax" x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${short(v)}</text>`;
+      months.forEach((k, i) => {
+        const cx = L + gw * i + gw / 2;
+        s += `<rect x="${cx - bw - 2}" y="${y(inc[i])}" width="${bw}" height="${Math.max(0, y(0) - y(inc[i]))}" rx="3" fill="var(--bean)"><title>${mLabel(k)} pemasukan ${rp(inc[i])}</title></rect>`;
+        s += `<rect x="${cx + 2}" y="${y(out[i])}" width="${bw}" height="${Math.max(0, y(0) - y(out[i]))}" rx="3" fill="var(--roast)"><title>${mLabel(k)} pengeluaran ${rp(out[i])}</title></rect>`;
+        s += `<text class="ax" x="${cx}" y="${H - 7}" text-anchor="middle" ${k === m ? 'style="font-weight:600;fill:var(--ink)"' : ''}>${mShort(k)}</text>`;
+      });
+      $('#chart').innerHTML = s + '</svg>';
+    }
+    const al = alertsList(), over = S.C.recv.filter(e => e.due && e.due < today());
+    $('#alertCount').textContent = al.length ? `${al.length} item` : '';
+    let ah = '';
+    if (over.length) ah += `<div class="alert"><div><b>${over.length} piutang lewat jatuh tempo</b><div class="hint">Total ${rp(over.reduce((a, e) => a + (+e.total || 0), 0))} · cek di Laporan → Tagihan</div></div><span class="pill bad">Tagih</span></div>`;
+    ah += al.slice(0, 8).map(a => `<div class="alert"><div><b>${esc(a.name)}</b><div class="hint">${T_LABEL[a.t]} · sisa ${nf(a.q, a.t === 'pack' ? 0 : 2)} ${T_UNIT[a.t]} · reorder ${nf(a.min, 2)}</div></div>${a.bad ? '<span class="pill bad">Habis</span>' : '<span class="pill warn">Menipis</span>'}</div>`).join('');
+    if (al.length > 8) ah += `<p class="hint">+${al.length - 8} item lain. Lihat menu Stok → filter "Perlu restock".</p>`;
+    $('#alerts').innerHTML = ah || '<p class="empty">Stok aman dan tidak ada tagihan lewat tempo.</p>';
+    const rec = S.entries.slice().sort((a, b) => (b.at || '').localeCompare(a.at || '')).slice(0, 10);
+    $('#recent').innerHTML = feed(rec, 'Belum ada transaksi.');
+  }
+};
+
+/* ---- Stok ---- */
+VIEWS.stok = {
+  period:false,
+  html: () => {
+    const t = UI.stokSub;
+    return `
+    <div class="subbar">${seg('stokSub', t, [['green','Green bean'],['roasted','Roasted'],['blend','Blend'],['pack','Kemasan']])}
+      <div class="chips"><input type="search" id="stokQ" placeholder="Cari nama…" value="${esc(UI.stokQ)}" aria-label="Cari">${seg('stokFilter', UI.stokFilter, [['all','Semua'],['have','Ada stok'],['low','Perlu restock']])}</div></div>
+    <div class="work">
+      <section class="panel w-only"><header><h2>Stok opname</h2><span class="hint">Samakan dengan hitungan fisik</span></header>
+        <form class="form" id="fOpname">
+          <label class="f"><span>${T_LABEL[t]}</span><select id="op-item" name="item" data-src="${T_SRC[t]}" data-show="${t}" required></select></label>
+          <div class="row">
+            <label class="f"><span>Stok fisik (${T_UNIT[t]})</span><input id="op-actual" name="actual" type="number" step="any" min="0" required></label>
+            <label class="f"><span>Tanggal</span><input id="op-date" name="date" type="date" value="${today()}" required></label>
+          </div>
+          <div class="calc" id="opCalc">Pilih barang untuk melihat stok di sistem.</div>
+          <label class="f"><span>Alasan</span><input id="op-note" name="note" placeholder="Hitung bulanan, rusak, tumpah…"></label>
+          <div class="form-actions"><button class="btn" type="submit">Simpan penyesuaian</button></div>
+        </form>
+      </section>
+      <section class="panel"><header><h2 id="stokHead"></h2><span class="hint" id="stokTotal"></span></header><div id="stokTable"></div></section>
+    </div>`;
+  },
+  bind() {
+    $('#stokQ').addEventListener('input', ev => { UI.stokQ = ev.target.value; this.refresh(); });
+    const f = $('#fOpname'), t = UI.stokSub;
+    const upd = () => {
+      const id = val(f, 'item'); if (!id) { $('#opCalc').textContent = 'Pilih barang untuk melihat stok di sistem.'; return; }
+      const sys = stk(t, id).qty, has = val(f, 'actual') !== '', d = numv(f, 'actual') - sys;
+      $('#opCalc').innerHTML = `<div>Stok di sistem: <b>${nf(sys)} ${T_UNIT[t]}</b></div>` + (has ? `<div class="${d < 0 ? 'bad' : ''}">Selisih: <b>${d > 0 ? '+' : ''}${nf(d)} ${T_UNIT[t]}</b> · nilai ${rps(d * costOf(t, id))}</div>` : '');
+    };
+    this._upd = upd; f.addEventListener('input', upd); f.addEventListener('change', upd);
+    f.addEventListener('submit', async ev => {
+      ev.preventDefault();
+      const id = val(f, 'item'); if (!id) return toast('Pilih barang dulu.', true);
+      const d = numv(f, 'actual') - stk(t, id).qty;
+      if (Math.abs(d) < 1e-9) return toast('Stok fisik sama dengan sistem.');
+      const ok = await guarded(f, () => addEntry({type:'adjust', date:val(f, 'date'), target:t, itemId:id, delta:Math.round(d * 1000) / 1000, note:val(f, 'note')}), 'Stok disesuaikan.');
+      if (ok) { f.elements.actual.value = ''; f.elements.note.value = ''; upd(); }
+    });
+  },
+  refresh() {
+    if (!ready()) { $('#stokTable').innerHTML = loadingHTML(); return; }
+    const t = UI.stokSub, q = UI.stokQ.toLowerCase(), fl = UI.stokFilter;
+    let total = 0, n = 0;
+    const list = activeList(S[T_SRC[t]]).filter(x => !q || x.name.toLowerCase().includes(q)).filter(x => {
+      const s = stk(t, x.id), min = minOf(t, x);
+      return fl === 'all' || (fl === 'have' && s.qty > 1e-6) || (fl === 'low' && min && s.qty < min);
+    });
+    const rows = list.map(x => {
+      const s = stk(t, x.id), min = minOf(t, x), c = costOf(t, x.id), v = Math.max(0, s.qty * c); total += v; n++;
+      let sub = '';
+      if (t === 'green') sub = [x.category, x.supplier].filter(Boolean).join(' · ');
+      if (t === 'roasted') { const y = yieldOf(x.id); sub = y ? `susut rata² ${pct(1 - y)} dari ${nf(S.C.roast[x.id].in)} kg roasting` : ''; }
+      return `<tr><td><b>${esc(x.name)}</b>${sub ? `<span class="sub">${esc(sub)}</span>` : ''}</td><td class="num">${nf(s.qty, t === 'pack' ? 0 : 2)}</td><td class="num">${min ? nf(min, 2) : '–'}</td><td class="num">${rp(c)}</td><td class="num">${rp(v)}</td><td>${stockStatus(s.qty, min)}</td></tr>`;
+    });
+    $('#stokHead').textContent = T_LABEL[t] + (n ? ` · ${n} item` : '');
+    $('#stokTotal').textContent = rows.length ? 'Nilai: ' + rp(total) : '';
+    $('#stokTable').innerHTML = rows.length ? table([[T_LABEL[t]], [`Stok (${T_UNIT[t]})`, 1], ['Reorder', 1], [t === 'pack' ? 'Harga/pcs' : 'Biaya/kg', 1], ['Nilai', 1], ['']], rows, `<tr><td colspan="4">Total nilai</td><td class="num">${rp(total)}</td><td></td></tr>`)
+      : `<p class="empty">${q || fl !== 'all' ? 'Tidak ada item yang cocok dengan filter.' : 'Belum ada data. Tambahkan di Data Master.'}</p>`;
+  }
+};
+
+/* ---- Produksi ---- */
+const partRow = () => `<div class="line2"><select data-src="greens" data-show="roasted" data-ph="Roasted bean" aria-label="Roasted bean"></select><input type="number" class="pk" min="0" step="any" placeholder="kg" aria-label="Kg"><button type="button" class="icon-btn" data-rmrow aria-label="Hapus">×</button></div>`;
+VIEWS.produksi = {
+  period:true,
+  html: () => {
+    const k = UI.prodSub; let form = '';
+    if (k === 'roast') form = `<header><h2>Catat roasting</h2></header>
+      <form class="form" id="fProd">
+        <div class="row"><label class="f"><span>Tanggal</span><input id="r-date" name="date" type="date" value="${today()}" required></label>
+        <label class="f"><span>Batch / profil</span><input id="r-batch" name="batch" placeholder="Espresso · B-12"></label></div>
+        <label class="f"><span>Green bean</span><select id="r-green" name="greenId" data-src="greens" data-show="green" required></select></label>
+        <div class="row"><label class="f"><span>Berat masuk / green (kg)</span><input id="r-in" name="inKg" type="number" step="any" min="0" required></label>
+        <label class="f"><span>Berat keluar / roasted (kg)</span><input id="r-out" name="outKg" type="number" step="any" min="0" required></label></div>
+        <div class="calc" id="prodCalc">Isi berat masuk dan keluar untuk melihat susut.</div>
+        <label class="f"><span>Catatan</span><input id="r-note" name="note" placeholder="Opsional"></label>
+        <div class="form-actions"><button class="btn" type="submit">Simpan roasting</button></div>
+      </form>`;
+    else if (k === 'blend') form = `<header><h2>Racik blend</h2><span class="hint">Roasted → stok blend</span></header>
+      <form class="form" id="fProd">
+        <div class="row"><label class="f"><span>Tanggal</span><input id="b-date" name="date" type="date" value="${today()}" required></label>
+        <label class="f"><span>Total blend (kg)</span><input id="b-total" name="total" type="number" step="any" min="0" placeholder="Isi untuk pakai resep"></label></div>
+        <label class="f"><span>Blend</span><select id="b-blend" name="blendId" data-src="blends" data-show="blend" required></select></label>
+        <div class="f"><span>Komponen roasted (kg)</span><div class="lines-in" id="partRows">${partRow()}${partRow()}</div>
+          <button type="button" class="btn ghost sm" id="addPart" style="justify-self:start">+ Komponen</button></div>
+        <div class="calc" id="prodCalc">Pilih blend. Kalau blend punya resep, komponen terisi otomatis dari total kg.</div>
+        <label class="f"><span>Catatan</span><input id="b-note" name="note" placeholder="Opsional"></label>
+        <div class="form-actions"><button class="btn" type="submit">Simpan racikan</button></div>
+      </form>`;
+    else form = `<header><h2>Stok keluar</h2><span class="hint">Pemakaian selain penjualan bernota</span></header>
+      <form class="form" id="fProd">
+        <div class="row"><label class="f"><span>Tanggal</span><input id="u-date" name="date" type="date" value="${today()}" required></label>
+        <label class="f"><span>Jenis stok</span><select id="u-target" name="target"><option value="roasted">Roasted bean</option><option value="blend">Blend</option><option value="green">Green bean</option></select></label></div>
+        <label class="f"><span>Item</span><select id="u-item" name="itemId" data-src="greens" data-show="roasted" required></select></label>
+        <div class="row"><label class="f"><span>Jumlah (kg)</span><input id="u-kg" name="kg" type="number" step="any" min="0" required></label>
+        <label class="f"><span>Kategori</span><select id="u-cat" name="category">${opts(USE_CATS)}</select></label></div>
+        <div class="row"><label class="f"><span>Kemasan dipakai (opsional)</span><select id="u-pack" name="packId" data-src="packs" data-show="pack" data-ph="Tidak pakai kemasan"></select></label>
+        <label class="f"><span>Jumlah kemasan</span><input id="u-pq" name="packQty" type="number" step="1" min="0"></label></div>
+        <div class="calc" id="prodCalc">Isi item dan jumlah untuk melihat nilainya.</div>
+        <label class="f"><span>Keterangan</span><input id="u-note" name="note" placeholder="Contoh: kirim ke Kopi Parang"></label>
+        <div class="form-actions"><button class="btn" type="submit">Simpan stok keluar</button></div>
+      </form>`;
+    return `
+    <div class="subbar">${seg('prodSub', k, [['roast','Roasting'],['blend','Racik blend'],['usage','Stok keluar']])}</div>
+    <div class="work">
+      <section class="panel w-only">${form}</section>
+      <div class="stack">
+        <section class="panel"><header><h2>Ringkasan ${mLabel(UI.month)}</h2></header><div id="prodStats"></div></section>
+        <section class="panel"><header><h2>Log produksi &amp; stok keluar</h2></header><div id="prodLog"></div></section>
+      </div>
+    </div>`;
+  },
+  bind() {
+    const f = $('#fProd'), k = UI.prodSub, calc = $('#prodCalc');
+    if (k === 'roast') {
+      const upd = () => {
+        const i = numv(f, 'inKg'), o = numv(f, 'outKg'), g = val(f, 'greenId');
+        if (!i || !o) { calc.textContent = 'Isi berat masuk dan keluar untuk melihat susut.'; return; }
+        if (o > i) { calc.innerHTML = '<div class="bad">Berat keluar tidak boleh lebih besar dari berat masuk.</div>'; return; }
+        const s = 1 - o / i, have = stk('green', g).qty, c = costOf('green', g);
+        let h = `<div>Susut: <b>${pct(s)}</b>${s < 0.08 || s > 0.22 ? ' <span class="warn">· di luar kisaran umum 10–20%, cek timbangan</span>' : ''}</div>`;
+        if (g && c) h += `<div>Biaya roasted ≈ <b>${rp(c / (o / i))}</b>/kg</div>`;
+        if (g && i > have + 1e-9) h += `<div class="bad">Stok green hanya ${nf(have)} kg</div>`;
+        calc.innerHTML = h;
+      };
+      this._upd = upd; f.addEventListener('input', upd); f.addEventListener('change', upd);
+      f.addEventListener('submit', async ev => {
+        ev.preventDefault();
+        const i = numv(f, 'inKg'), o = numv(f, 'outKg');
+        if (!val(f, 'greenId')) return toast('Pilih green bean dulu.', true);
+        if (!(i > 0 && o > 0) || o > i) return toast('Periksa berat: keluar harus lebih kecil dari masuk.', true);
+        const ok = await guarded(f, () => addEntry({type:'roast', date:val(f, 'date'), greenId:val(f, 'greenId'), inKg:i, outKg:o, batch:val(f, 'batch'), note:val(f, 'note')}), 'Roasting tersimpan.');
+        if (ok) { ['inKg','outKg','batch','note'].forEach(n => f.elements[n].value = ''); upd(); }
+      });
+    } else if (k === 'blend') {
+      const parts = () => $$('#partRows .line2').map(r => ({greenId:$('select', r).value, kg:+$('.pk', r).value || 0})).filter(p => p.greenId && p.kg > 0);
+      const upd = () => {
+        const ps = parts(); if (!ps.length) { calc.textContent = 'Pilih blend. Kalau blend punya resep, komponen terisi otomatis dari total kg.'; return; }
+        const kg = ps.reduce((a, p) => a + p.kg, 0), v = ps.reduce((a, p) => a + p.kg * costOf('roasted', p.greenId), 0);
+        let h = `<div>Hasil blend: <b>${nf(kg)} kg</b> · biaya ≈ <b>${rp(kg ? v / kg : 0)}</b>/kg</div>`;
+        ps.forEach(p => { const have = stk('roasted', p.greenId).qty; if (p.kg > have + 1e-9) h += `<div class="bad">${esc(gName(p.greenId))}: stok roasted hanya ${nf(have)} kg</div>`; });
+        calc.innerHTML = h;
+      };
+      const fromRecipe = () => {
+        const b = S.blends[val(f, 'blendId')], tot = numv(f, 'total');
+        if (!b || !(b.recipe || []).length || !tot) return;
+        $('#partRows').innerHTML = b.recipe.map(partRow).join('');
+        $$('#partRows .line2').forEach((r, i) => { const rc = b.recipe[i]; $('select', r).dataset.want = rc.greenId; $('.pk', r).value = Math.round(tot * rc.pct / 100 * 1000) / 1000; });
+        refreshSelects($('#partRows'));
+      };
+      this._upd = upd;
+      f.addEventListener('input', upd);
+      f.addEventListener('change', ev => { if (ev.target.name === 'blendId' || ev.target.name === 'total') fromRecipe(); upd(); });
+      $('#addPart').addEventListener('click', () => { $('#partRows').insertAdjacentHTML('beforeend', partRow()); refreshSelects($('#partRows').lastElementChild); });
+      f.addEventListener('click', ev => { const b = ev.target.closest('[data-rmrow]'); if (b) { b.closest('.line2').remove(); upd(); } });
+      f.addEventListener('submit', async ev => {
+        ev.preventDefault();
+        const ps = parts().map(p => ({greenId:p.greenId, kg:Math.round(p.kg * 1000) / 1000}));
+        if (!val(f, 'blendId')) return toast('Pilih blend dulu.', true);
+        if (!ps.length) return toast('Isi minimal satu komponen roasted.', true);
+        const ok = await guarded(f, () => addEntry({type:'blend', date:val(f, 'date'), blendId:val(f, 'blendId'), parts:ps, note:val(f, 'note')}), 'Racikan blend tersimpan.');
+        if (ok) { $('#partRows').innerHTML = partRow() + partRow(); refreshSelects($('#partRows')); f.elements.total.value = ''; f.elements.note.value = ''; upd(); }
+      });
+    } else {
+      const tSel = $('#u-target'), iSel = $('#u-item');
+      const setSrc = () => { const t = tSel.value; iSel.dataset.src = T_SRC[t]; iSel.dataset.show = t; iSel.value = ''; refreshSelects(iSel.parentElement); };
+      const upd = () => {
+        const t = tSel.value, id = val(f, 'itemId'), kg = numv(f, 'kg');
+        if (!id || !kg) { calc.textContent = 'Isi item dan jumlah untuk melihat nilainya.'; return; }
+        const have = stk(t, id).qty; let v = kg * costOf(t, id);
+        if (val(f, 'packId')) v += numv(f, 'packQty') * costOf('pack', val(f, 'packId'));
+        calc.innerHTML = `<div>Nilai stok keluar ≈ <b>${rp(v)}</b></div>` + (kg > have + 1e-9 ? `<div class="bad">Stok hanya ${nf(have)} kg</div>` : '');
+      };
+      this._upd = upd;
+      tSel.addEventListener('change', setSrc);
+      f.addEventListener('input', upd); f.addEventListener('change', upd);
+      f.addEventListener('submit', async ev => {
+        ev.preventDefault();
+        const kg = numv(f, 'kg'); if (!val(f, 'itemId')) return toast('Pilih item dulu.', true); if (!(kg > 0)) return toast('Isi jumlah kg.', true);
+        const e = {type:'usage', date:val(f, 'date'), target:tSel.value, itemId:val(f, 'itemId'), kg, category:val(f, 'category'), note:val(f, 'note')};
+        if (val(f, 'packId') && numv(f, 'packQty') > 0) { e.packId = val(f, 'packId'); e.packQty = Math.round(numv(f, 'packQty')); }
+        const ok = await guarded(f, () => addEntry(e), 'Stok keluar tersimpan.');
+        if (ok) { ['kg','packQty','note'].forEach(n => f.elements[n].value = ''); upd(); }
+      });
+    }
+  },
+  refresh() {
+    if (!ready()) { $('#prodLog').innerHTML = loadingHTML(); return; }
+    const x = mOf(UI.month);
+    const uses = Object.entries(x.usage).sort((a, b) => b[1].kg - a[1].kg), maxKg = Math.max(1e-9, ...uses.map(u => u[1].kg));
+    $('#prodStats').innerHTML = `<div class="lines">
+      <div class="ln"><span>Green di-roast</span><span>${nf(x.roastIn)} kg</span></div>
+      <div class="ln"><span>Hasil roasted</span><span>${nf(x.roastOut)} kg${x.roastIn ? ` · susut ${pct(1 - x.roastOut / x.roastIn)}` : ''}</span></div>
+      <div class="ln"><span>Blend diracik</span><span>${nf(x.blendKg)} kg</span></div>
+      <div class="ln"><span>Terjual lewat nota</span><span>${nf(x.kgSold)} kg</span></div></div>
+      ${uses.length ? `<h3 style="margin-top:14px">Stok keluar per kategori</h3>` + uses.map(([c, u]) => `<div class="bar-row"><span>${esc(c)}</span><span>${nf(u.kg)} kg · ${short(u.val)}</span><div class="track"><i style="width:${(u.kg / maxKg * 100).toFixed(1)}%"></i></div></div>`).join('') : ''}`;
+    $('#prodLog').innerHTML = feed(monthEntries(UI.month, ['roast','blend','usage','adjust']), `Belum ada catatan di ${mLabel(UI.month)}.`);
+  }
+};
+
+/* ---- Penjualan ---- */
+const saleLine = () => `<div class="line"><select data-src="products" data-ph="Pilih produk" aria-label="Produk"></select><input type="number" class="ql" min="1" step="1" value="1" aria-label="Jumlah"><input class="money pl" inputmode="numeric" placeholder="Harga" aria-label="Harga satuan"><button type="button" class="icon-btn" data-rmline aria-label="Hapus baris">×</button></div>`;
+VIEWS.penjualan = {
+  period:true,
+  html: () => `
+    <div class="work">
+      <section class="panel w-only"><header><h2>Catat penjualan</h2><span class="hint">Stok roasted/blend &amp; kemasan terpotong otomatis</span></header>
+        <form class="form" id="fSale">
+          <div class="row">
+            <label class="f"><span>Tanggal</span><input id="s-date" name="date" type="date" value="${today()}" required></label>
+            <label class="f"><span>Kanal</span><select id="s-channel" name="channel">${opts(CHANNELS)}</select></label>
+          </div>
+          <label class="f"><span>Pelanggan</span><input id="s-cust" name="customer" list="custList" placeholder="Kopi Parang, Dungo Kauman…"></label>
+          <div class="f"><span>Item (dari Daftar Harga)</span><div class="lines-in" id="saleLines">${saleLine()}</div>
+            <button type="button" class="btn ghost sm" id="addLine" style="justify-self:start">+ Tambah item</button></div>
+          <div class="row">
+            <label class="f"><span>Diskon (Rp)</span><input id="s-disc" name="discount" class="money" inputmode="numeric" placeholder="0"></label>
+            <label class="f"><span>Ongkir ditagih (Rp)</span><input id="s-ship" name="shipping" class="money" inputmode="numeric" placeholder="0"></label>
+          </div>
+          <div class="row">
+            <label class="f"><span>Metode bayar</span><select id="s-method" name="method">${opts(METHODS)}</select></label>
+            <label class="f" id="dueBox" hidden><span>Jatuh tempo</span><input id="s-due" name="due" type="date"></label>
+          </div>
+          <label class="check"><input id="s-paid" name="paid" type="checkbox" checked> Sudah dibayar (masuk buku kas sebagai Penjualan Kopi)</label>
+          <label class="f"><span>Catatan</span><input id="s-note" name="note" placeholder="Opsional"></label>
+          <div class="calc" id="saleCalc"></div>
+          <div class="total-bar"><span>Total</span><b id="saleTotal">Rp 0</b></div>
+          <div class="form-actions"><button class="btn" type="submit">Simpan penjualan</button></div>
+        </form>
+      </section>
+      <section class="panel"><header><h2 id="saleHead">Penjualan</h2>${seg('saleFilter', UI.saleFilter, [['month','Periode ini'],['unpaid','Belum lunas (semua)']])}</header>
+        <div id="saleSum" class="hint" style="margin:-4px 0 10px"></div><div id="saleList"></div></section>
+    </div>`,
+  bind() {
+    const f = $('#fSale');
+    const calc = () => {
+      let sub = 0, cogs = 0, warn = ''; const need = {};
+      $$('.line', f).forEach(l => {
+        const p = S.products[$('select', l).value], q = +$('.ql', l).value || 0, pr = +($('.pl', l).value.replace(/\D/g, '') || 0);
+        sub += q * pr;
+        if (p) { cogs += productCost(p) * q; const key = (p.kind === 'blend' ? 'blend' : 'roasted') + '|' + p.beanId; need[key] = (need[key] || 0) + p.grams * q / 1000; }
+      });
+      for (const key in need) { const [t, id] = key.split('|'); const have = stk(t, id).qty; if (need[key] > have + 1e-9) warn += `<div class="warn">${esc(itemName(t, id))}: butuh ${nf(need[key])} kg, stok ${nf(have)} kg</div>`; }
+      const total = sub - money(f, 'discount') + money(f, 'shipping'), net = sub - money(f, 'discount');
+      $('#saleTotal').textContent = rp(total);
+      $('#saleCalc').innerHTML = sub ? `<div>Subtotal <b>${rp(sub)}</b> · HPP ≈ <b>${rp(cogs)}</b> · laba kotor <b>${rp(net - cogs)}</b>${net ? ` (${pct((net - cogs) / net)})` : ''}</div>${warn}` : 'Pilih produk untuk menghitung total.';
+      return {sub, total};
+    };
+    this._upd = calc;
+    f.addEventListener('input', calc);
+    f.addEventListener('change', ev => {
+      if (ev.target.matches('.line select')) { const p = S.products[ev.target.value]; if (p) $('.pl', ev.target.closest('.line')).value = moneyStr(p.price); }
+      if (ev.target.id === 's-paid') $('#dueBox').hidden = ev.target.checked;
+      calc();
+    });
+    $('#addLine').addEventListener('click', () => { $('#saleLines').insertAdjacentHTML('beforeend', saleLine()); refreshSelects($('#saleLines').lastElementChild); });
+    f.addEventListener('click', ev => { const b = ev.target.closest('[data-rmline]'); if (b) { if ($$('.line', f).length > 1) b.closest('.line').remove(); else { const l = b.closest('.line'); $('select', l).value = ''; $('.pl', l).value = ''; $('.ql', l).value = 1; } calc(); } });
+    f.addEventListener('submit', async ev => {
+      ev.preventDefault();
+      const items = $$('.line', f).map(l => { const p = S.products[$('select', l).value]; if (!p) return null;
+        return {productId:p.id, name:p.name, kind:p.kind, beanId:p.beanId, grams:+p.grams || 0, packId:p.packId || '', qty:Math.round(+$('.ql', l).value || 0), price:+($('.pl', l).value.replace(/\D/g, '') || 0)}; }).filter(i => i && i.qty > 0);
+      if (!items.length) return toast('Tambahkan minimal satu produk.', true);
+      const {sub, total} = calc(); const paid = f.elements.paid.checked;
+      const e = {type:'sale', date:val(f, 'date'), customer:val(f, 'customer'), channel:val(f, 'channel'), method:val(f, 'method'), items, subtotal:sub, discount:money(f, 'discount'), shipping:money(f, 'shipping'), total, paid, note:val(f, 'note')};
+      if (paid) e.paidDate = e.date; else if (val(f, 'due')) e.due = val(f, 'due');
+      const ok = await guarded(f, () => addEntry(e), 'Penjualan tersimpan.');
+      if (ok) { $('#saleLines').innerHTML = saleLine(); refreshSelects($('#saleLines')); ['customer','discount','shipping','note','due'].forEach(n => f.elements[n].value = ''); f.elements.paid.checked = true; $('#dueBox').hidden = true; calc(); }
+    });
+  },
+  refresh() {
+    if (!ready()) { $('#saleList').innerHTML = loadingHTML(); return; }
+    const x = mOf(UI.month);
+    if (UI.saleFilter === 'unpaid') {
+      const list = S.C.recv.slice().sort((a, b) => a.date.localeCompare(b.date));
+      $('#saleHead').textContent = 'Piutang';
+      $('#saleSum').textContent = list.length ? `${list.length} order · total ${rp(list.reduce((a, e) => a + (+e.total || 0), 0))}` : '';
+      $('#saleList').innerHTML = feed(list, 'Semua penjualan sudah lunas.');
+    } else {
+      const kasSales = (x.cat['Penjualan Kopi'] || {in:0}).in;
+      $('#saleHead').textContent = 'Penjualan ' + mLabel(UI.month);
+      $('#saleSum').textContent = `Nota: ${x.orders} order · ${nf(x.kgSold)} kg · ${rp(x.sales - x.disc + x.ship)} · Kas kategori Penjualan Kopi bulan ini: ${rp(kasSales)}`;
+      $('#saleList').innerHTML = feed(monthEntries(UI.month, ['sale']), `Belum ada nota penjualan di ${mLabel(UI.month)}. Pemasukan lama dari Excel ada di Kas &amp; Pembelian.`);
+    }
+  }
+};
+
+/* ---- Kas & Pembelian ---- */
+VIEWS.keuangan = {
+  period:true,
+  html: () => {
+    const k = UI.keuSub; let form = '', title = '';
+    const paidBox = `<label class="check"><input id="k-paid" name="paid" type="checkbox" checked> Sudah dibayar (masuk buku kas)</label>`;
+    if (k === 'kas') { title = 'Catat kas masuk / keluar'; form = `
+      <div class="row"><label class="f"><span>Tanggal</span><input id="k-date" name="date" type="date" value="${today()}" required></label>
+      <label class="f"><span>Arah</span><select id="k-dir" name="dir"><option value="out">Keluar</option><option value="in">Masuk</option></select></label></div>
+      <label class="f"><span>Kategori</span><select id="k-cat" name="category">${catOpts()}</select></label>
+      <label class="f"><span>Keterangan</span><input id="k-desc" name="desc" placeholder="Bayar listrik Oktober" required></label>
+      <label class="f"><span>Nominal (Rp)</span><input id="k-total" name="total" class="money" inputmode="numeric" required></label>
+      <div class="f"><span>Payment rutin</span><div class="chips">${conf().routine.map((r, i) => `<button type="button" class="btn ghost sm" data-routine="${i}">${esc(r.label.replace('Payment ', ''))} · ${short(r.amount)}</button>`).join('')}</div></div>
+      <p class="hint" style="margin:0">Beli green bean &amp; kemasan sebaiknya lewat tab di atas supaya stok ikut bertambah.</p>`; }
+    else if (k === 'green') { title = 'Beli green bean'; form = `
+      <div class="row"><label class="f"><span>Tanggal</span><input id="k-date" name="date" type="date" value="${today()}" required></label>
+      <label class="f"><span>Supplier</span><input id="k-sup" name="supplier" list="suppList" placeholder="Mas Heri, Prau…"></label></div>
+      <label class="f"><span>Green bean</span><select id="k-item" name="item" data-src="greens" data-show="green" required></select></label>
+      <div class="row"><label class="f"><span>Berat (kg)</span><input id="k-qty" name="qty" type="number" step="any" min="0" required></label>
+      <label class="f"><span>Total harga (Rp)</span><input id="k-total" name="total" class="money" inputmode="numeric" required></label></div>
+      <div class="calc" id="buyCalc">Harga per kg muncul setelah berat dan total diisi.</div>${paidBox}`; }
+    else { title = 'Beli kemasan'; form = `
+      <div class="row"><label class="f"><span>Tanggal</span><input id="k-date" name="date" type="date" value="${today()}" required></label>
+      <label class="f"><span>Supplier</span><input id="k-sup" name="supplier" list="suppList" placeholder="Opsional"></label></div>
+      <label class="f"><span>Kemasan</span><select id="k-item" name="item" data-src="packs" data-show="pack" required></select></label>
+      <div class="row"><label class="f"><span>Jumlah (pcs)</span><input id="k-qty" name="qty" type="number" step="1" min="0" required></label>
+      <label class="f"><span>Total harga (Rp)</span><input id="k-total" name="total" class="money" inputmode="numeric" required></label></div>
+      <div class="calc" id="buyCalc">Harga per pcs muncul setelah jumlah dan total diisi.</div>${paidBox}`; }
+    return `
+    <div class="subbar">${seg('keuSub', k, [['kas','Kas masuk/keluar'],['green','Beli green bean'],['pack','Beli kemasan']])}</div>
+    <div class="work">
+      <section class="panel w-only"><header><h2>${title}</h2></header>
+        <form class="form" id="fKeu">${form}
+          <label class="f"><span>Catatan</span><input id="k-note" name="note" placeholder="Opsional"></label>
+          <div class="form-actions"><button class="btn" type="submit">Simpan</button></div>
+        </form></section>
+      <section class="panel"><header><h2 id="kasHead"></h2><span class="hint" id="kasSum"></span></header><div id="kasList"></div></section>
+    </div>`;
+  },
+  bind() {
+    const f = $('#fKeu'), k = UI.keuSub;
+    if (k === 'kas') {
+      f.elements.category.value = 'Pengeluaran Lainnya';
+      f.elements.category.addEventListener('change', () => { f.elements.dir.value = CATS_IN.includes(f.elements.category.value) ? 'in' : 'out'; });
+      f.addEventListener('click', ev => { const b = ev.target.closest('[data-routine]'); if (!b) return; const r = conf().routine[+b.dataset.routine];
+        f.elements.dir.value = 'out'; f.elements.category.value = CATS_OUT.includes(r.label) ? r.label : 'Pengeluaran Lainnya'; f.elements.desc.value = r.label + ' ' + mLabel(UI.month); f.elements.total.value = moneyStr(r.amount); });
+    } else {
+      const upd = () => { const q = numv(f, 'qty'), t = money(f, 'total'); $('#buyCalc').innerHTML = q && t ? `Harga per ${k === 'green' ? 'kg' : 'pcs'}: <b>${rp(t / q)}</b>` : `Harga per ${k === 'green' ? 'kg' : 'pcs'} muncul setelah jumlah dan total diisi.`; };
+      f.addEventListener('input', upd);
+    }
+    f.addEventListener('submit', async ev => {
+      ev.preventDefault();
+      const date = val(f, 'date'), total = money(f, 'total'), note = val(f, 'note'); let e;
+      if (!(total > 0)) return toast('Isi nominal rupiah.', true);
+      if (k === 'kas') { if (!val(f, 'desc')) return toast('Isi keterangan.', true); e = {type:'kas', date, dir:val(f, 'dir'), category:val(f, 'category'), desc:val(f, 'desc'), amount:total, note}; }
+      else {
+        const item = val(f, 'item'), q = numv(f, 'qty'); if (!item) return toast('Pilih barang dulu.', true); if (!(q > 0)) return toast('Isi jumlah.', true);
+        const paid = f.elements.paid.checked;
+        e = k === 'green' ? {type:'green_in', greenId:item, kg:q} : {type:'pack_in', packId:item, qty:Math.round(q)};
+        Object.assign(e, {date, total, supplier:val(f, 'supplier'), paid, note}); if (paid) e.paidDate = date;
+      }
+      const ok = await guarded(f, () => addEntry(e), 'Tersimpan.');
+      if (ok) { ['qty','total','note','desc'].forEach(n => f.elements[n] && (f.elements[n].value = '')); }
+    });
+  },
+  refresh() {
+    if (!ready()) { $('#kasList').innerHTML = loadingHTML(); return; }
+    const k = UI.keuSub, m = UI.month, x = mOf(m);
+    if (k === 'kas') {
+      const start = cashUntil(addMonths(m, -1));
+      const ev = S.C.cash.filter(c => c.date.startsWith(m));
+      $('#kasHead').textContent = 'Buku kas ' + mLabel(m);
+      $('#kasSum').textContent = `Saldo awal ${rps(start)} · akhir ${rps(start + x.cin - x.cout)}`;
+      $('#kasList').innerHTML = ev.length ? table([['Tgl'], ['Keterangan'], ['Masuk', 1], ['Keluar', 1], ['Saldo', 1], ['']],
+        ev.slice().reverse().map(c => `<tr><td class="num" style="text-align:left">${dLabel(c.date)}</td><td>${esc(c.desc)}<span class="sub">${esc(c.cat)} ${who(c.e)}</span></td><td class="num pos">${c.dir === 'in' ? rp(c.amt) : ''}</td><td class="num">${c.dir === 'out' ? rp(c.amt) : ''}</td><td class="num">${rps(c.bal)}</td><td><div class="actions w-only"><button class="btn sm ghost danger" data-del="${esc(c.e.id)}">Hapus</button></div></td></tr>`),
+        `<tr><td colspan="2">Total ${mLabel(m)}</td><td class="num pos">${rp(x.cin)}</td><td class="num">${rp(x.cout)}</td><td class="num">${rps(start + x.cin - x.cout)}</td><td></td></tr>`)
+        : `<p class="empty">Belum ada transaksi kas di ${mLabel(m)}.</p>`;
+    } else {
+      const t = k === 'green' ? 'green_in' : 'pack_in';
+      $('#kasHead').textContent = (k === 'green' ? 'Pembelian green bean ' : 'Pembelian kemasan ') + mLabel(m);
+      $('#kasSum').textContent = 'Total ' + rp(k === 'green' ? x.buyGreen : x.buyPack);
+      $('#kasList').innerHTML = feed(monthEntries(m, [t]), `Belum ada pembelian di ${mLabel(m)}.`);
+    }
+  }
+};
+
+/* ---- Laporan ---- */
+VIEWS.laporan = {
+  period:true,
+  html: () => `<div class="subbar">${seg('lapSub', UI.lapSub, [['bulanan','Bulanan & bagi hasil'],['tahunan','Rekap tahunan'],['hpp','HPP & margin'],['tagihan','Piutang & hutang']])}
+    <button class="btn ghost sm" id="exportBtn" type="button" hidden>Unduh buku kas (CSV)</button></div><div id="lap"></div>`,
+  bind() {
+    $('#exportBtn').addEventListener('click', async () => {
+      if (!dl) return;
+      const rows = [['Tanggal','Keterangan','Kategori','Masuk (Rp)','Keluar (Rp)','Saldo (Rp)']];
+      S.C.cash.filter(c => c.date.startsWith(UI.month)).forEach(c => rows.push([c.date, c.desc, c.cat, c.dir === 'in' ? Math.round(c.amt) : '', c.dir === 'out' ? Math.round(c.amt) : '', Math.round(c.bal)]));
+      const csv = '﻿' + rows.map(r => r.map(c => { const s = String(c); return /[",;\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }).join(',')).join('\n');
+      try { await dl.save({filename:`buku-kas-${UI.month}.csv`, data:csv}); } catch (err) { if (err && err.code !== 'declined') toast('Gagal mengunduh: ' + (err.message || err.code), true); }
+    });
+  },
+  refresh() {
+    $('#exportBtn').hidden = !dl || UI.lapSub !== 'bulanan';
+    if (!ready()) { $('#lap').innerHTML = loadingHTML(); return; }
+    const m = UI.month, x = mOf(m), c = conf();
+    const L = (a, b, cl = '') => `<div class="ln ${cl}"><span>${a}</span><span>${b}</span></div>`;
+    if (UI.lapSub === 'bulanan') {
+      const laba = labaOf(x), d = distrib(laba), start = cashUntil(addMonths(m, -1));
+      const ins = Object.entries(x.cat).filter(([, v]) => v.in).sort((a, b) => b[1].in - a[1].in), outs = Object.entries(x.cat).filter(([, v]) => v.out).sort((a, b) => b[1].out - a[1].out);
+      const real = (x.cat['Distribusi/Dividen (Realisasi)'] || {out:0}).out;
+      $('#lap').innerHTML = `<div class="grid2b">
+        <section class="panel"><header><h2>Arus kas ${mLabel(m)}</h2></header><div class="lines">
+          ${L('Kas awal bulan', rps(start), 'tot')}${L('Pemasukan', '', 'sec')}${ins.map(([k, v]) => L(esc(k), rp(v.in), 'in')).join('') || L('Tidak ada', rp(0), 'in')}${L('Total pemasukan', rp(x.cin), 'tot')}
+          ${L('Pengeluaran', '', 'sec')}${outs.map(([k, v]) => L(esc(k), rp(v.out), 'in')).join('') || L('Tidak ada', rp(0), 'in')}${L('Total pengeluaran', rp(x.cout), 'tot')}
+          <div class="ln big"><span>Kas akhir bulan</span><span>${rps(start + x.cin - x.cout)}</span></div></div></section>
+        <section class="panel"><header><h2>Laba &amp; pembagian</h2><span class="hint">${c.basis === 'op' ? 'Laba tanpa modal & dividen' : 'Laba = pemasukan − pengeluaran (seperti Excel)'}</span></header><div class="lines">
+          <div class="ln big" style="padding-top:0"><span>Laba (profit)</span><span class="${laba >= 0 ? 'pos' : 'neg'}">${rps(laba)}</span></div>
+          ${d.shares.map(s => L(`${esc(s.label)} ${nf(s.pct, 2)}%`, rp(s.amt), 'in')).join('')}
+          ${L(`Saving (min ${short(c.savingMin)} atau ${nf(c.savingPct)}% laba)`, rp(d.saving), 'in')}
+          <div class="ln big"><span>Sisa setelah distribusi</span><span class="${d.sisa >= 0 ? 'pos' : 'neg'}">${rps(d.sisa)}</span></div>
+          ${L('Distribusi/dividen sudah ditransfer bulan ini', rp(real), 'in')}</div>
+          ${laba <= 0 ? '<p class="hint">Laba bulan ini tidak positif, jadi Yayasan dan Pak Munir 0. Saving minimum tetap dihitung, sama seperti rumus Excel.</p>' : ''}</section></div>`;
+    } else if (UI.lapSub === 'tahunan') {
+      const y = m.slice(0, 4); let T = {cin:0, cout:0, laba:0, sh:c.shares.map(() => 0), sav:0};
+      let kas = cashUntil((+y - 1) + '-12');
+      const rows = BULAN.map((b, i) => { const k = y + '-' + pad(i + 1), xx = mOf(k), laba = labaOf(xx), d = distrib(laba); const awal = kas; kas += xx.cin - xx.cout;
+        T.cin += xx.cin; T.cout += xx.cout; T.laba += laba; d.shares.forEach((s, j) => T.sh[j] += s.amt); T.sav += d.saving;
+        return `<tr class="${k === m ? 'cur' : ''}"><td>${b.slice(0, 3)} ${y}</td><td class="num">${rp(xx.cin)}</td><td class="num">${rp(xx.cout)}</td><td class="num ${laba < 0 ? 'neg' : ''}">${rps(laba)}</td>${d.shares.map(s => `<td class="num">${rp(s.amt)}</td>`).join('')}<td class="num">${rp(d.saving)}</td><td class="num ${d.sisa < 0 ? 'neg' : ''}">${rps(d.sisa)}</td><td class="num">${rps(awal)}</td><td class="num">${rps(kas)}</td></tr>`; });
+      $('#lap').innerHTML = `<section class="panel"><header><h2>Laporan bulanan ${y}</h2><span class="hint">Sama dengan sheet Laporan Bulanan di Excel</span></header>${table([['Periode'], ['Pemasukan', 1], ['Pengeluaran', 1], ['Laba', 1], ...c.shares.map(s => [esc(s.label), 1]), ['Saving', 1], ['Sisa', 1], ['Kas awal', 1], ['Kas akhir', 1]], rows,
+        `<tr><td>Total ${y}</td><td class="num">${rp(T.cin)}</td><td class="num">${rp(T.cout)}</td><td class="num">${rps(T.laba)}</td>${T.sh.map(v => `<td class="num">${rp(v)}</td>`).join('')}<td class="num">${rp(T.sav)}</td><td></td><td></td><td class="num">${rps(kas)}</td></tr>`)}</section>`;
+    } else if (UI.lapSub === 'hpp') {
+      const sold = S.C.soldBy[m] || {}, net = x.sales - x.disc, gp = net - x.cogs;
+      const uses = Object.entries(x.usage).sort((a, b) => b[1].val - a[1].val);
+      const byG = {}; activeList(S.products).forEach(p => (byG[p.group || 'Lainnya'] ||= []).push(p));
+      const rows = []; GROUPS.filter(g => byG[g]).forEach(g => { rows.push(`<tr class="grp"><td colspan="7">${esc(g)}</td></tr>`);
+        byG[g].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'id') || a.grams - b.grams).forEach(p => { const hc = productCost(p), mg = (+p.price || 0) - hc;
+          rows.push(`<tr><td><b>${esc(p.name)}</b><span class="sub">${p.packId ? esc(pName(p.packId)) : 'tanpa kemasan'}</span></td><td class="num">${rp(hc)}</td><td class="num">${rp(p.price)}</td><td class="num ${mg < 0 ? 'neg' : 'pos'}">${rps(mg)}</td><td class="num">${p.price ? pct(mg / p.price) : '–'}</td><td class="num">${nf(sold[p.id]?.qty || 0, 0)}</td><td class="num">${rp(sold[p.id]?.rev || 0)}</td></tr>`); }); });
+      $('#lap').innerHTML = `<div class="grid2b">
+        <section class="panel"><header><h2>Laba kotor nota ${mLabel(m)}</h2></header><div class="lines">${L('Penjualan (nota)', rp(x.sales))}${L('Diskon', '−' + rp(x.disc), 'in')}${L('HPP (biaya stok terjual)', '−' + rp(x.cogs))}<div class="ln big"><span>Laba kotor${net ? ' · ' + pct(gp / net) : ''}</span><span class="${gp >= 0 ? 'pos' : 'neg'}">${rps(gp)}</span></div></div>
+          <p class="hint">Hanya dari penjualan yang dicatat lewat menu Penjualan. Pemasukan lama dari Excel tidak punya rincian produk.</p></section>
+        <section class="panel"><header><h2>Nilai stok keluar ${mLabel(m)}</h2></header>${uses.length ? `<div class="lines">${uses.map(([k, u]) => L(`${esc(k)} · ${nf(u.kg)} kg`, rp(u.val))).join('')}${L('Total', rp(uses.reduce((a, u) => a + u[1].val, 0)), 'tot')}</div>` : '<p class="empty">Belum ada stok keluar bulan ini.</p>'}</section></div>
+        <section class="panel mt"><header><h2>HPP &amp; margin per produk</h2><span class="hint">HPP = biaya rata-rata stok saat ini, atau harga referensi kalau belum ada stok</span></header>${rows.length ? table([['Produk'], ['HPP', 1], ['Harga jual', 1], ['Margin', 1], ['%', 1], ['Terjual', 1], ['Omzet', 1]], rows) : '<p class="empty">Daftar harga masih kosong. Isi di Data Master → Daftar harga.</p>'}</section>`;
+    } else {
+      const rv = S.C.recv.slice().sort((a, b) => (a.due || a.date).localeCompare(b.due || b.date)), py = S.C.pay.slice().sort((a, b) => a.date.localeCompare(b.date));
+      $('#lap').innerHTML = `<div class="grid2b">
+        <section class="panel"><header><h2>Piutang pelanggan</h2><span class="hint">${rv.length ? rp(rv.reduce((a, e) => a + (+e.total || 0), 0)) : ''}</span></header>${feed(rv, 'Tidak ada piutang.')}</section>
+        <section class="panel"><header><h2>Hutang ke supplier</h2><span class="hint">${py.length ? rp(py.reduce((a, e) => a + (+e.total || 0), 0)) : ''}</span></header>${feed(py, 'Tidak ada hutang.')}</section></div>`;
+    }
+  }
+};
+
+/* ---- Data Master ---- */
+const recipeRow = () => `<div class="line2"><select data-src="greens" data-ph="Roasted bean" aria-label="Bean"></select><input type="number" class="rp" min="0" max="100" step="any" placeholder="%" aria-label="Persen"><button type="button" class="icon-btn" data-rmrow aria-label="Hapus">×</button></div>`;
+const shareRow = (s = {}) => `<div class="line2"><input class="sl" value="${esc(s.label || '')}" placeholder="Nama penerima" aria-label="Penerima"><input type="number" class="sp" step="any" min="0" value="${s.pct ?? ''}" placeholder="%" aria-label="Persen"><button type="button" class="icon-btn" data-rmrow aria-label="Hapus">×</button></div>`;
+const routineRow = (r = {}) => `<div class="line2"><select class="rl" aria-label="Kategori">${CATS_OUT.map(c => `<option ${c === r.label ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select><input class="money ra" inputmode="numeric" value="${moneyStr(r.amount)}" placeholder="Rp" aria-label="Nominal"><button type="button" class="icon-btn" data-rmrow aria-label="Hapus">×</button></div>`;
+const MCOLL = {green:'greens', blend:'blends', pack:'packs', product:'products'};
+VIEWS.master = {
+  period:false,
+  html: () => {
+    const k = UI.masterSub; let form = '', title = '';
+    if (k === 'green') { title = 'green bean'; form = `
+      <label class="f"><span>Nama</span><input id="m-name" name="name" placeholder="Prau (120 Hours)" required></label>
+      <div class="row"><label class="f"><span>Kategori</span><select id="m-cat" name="category"><option>Espresso</option><option>Filter</option><option>Lainnya</option></select></label>
+      <label class="f"><span>Harga referensi /kg</span><input id="m-price" name="price" class="money" inputmode="numeric"></label></div>
+      <div class="row"><label class="f"><span>Reorder green (kg)</span><input id="m-min" name="minKg" type="number" step="any" min="0"></label>
+      <label class="f"><span>Reorder roasted (kg)</span><input id="m-minr" name="minRoastedKg" type="number" step="any" min="0"></label></div>
+      <label class="f"><span>Supplier utama</span><input id="m-sup" name="supplier" list="suppList"></label>`; }
+    else if (k === 'blend') { title = 'blend'; form = `
+      <label class="f"><span>Nama blend</span><input id="m-name" name="name" placeholder="Kirana Blend" required></label>
+      <div class="row"><label class="f"><span>COGS referensi /kg</span><input id="m-cogs" name="cogs" class="money" inputmode="numeric"></label>
+      <label class="f"><span>Reorder (kg)</span><input id="m-min" name="minKg" type="number" step="any" min="0"></label></div>
+      <div class="f"><span>Resep (% roasted, opsional)</span><div class="lines-in" id="recipeRows"></div><button type="button" class="btn ghost sm" id="addRecipe" style="justify-self:start">+ Komponen</button></div>`; }
+    else if (k === 'pack') { title = 'kemasan'; form = `
+      <label class="f"><span>Nama</span><input id="m-name" name="name" placeholder="Pack Hologram 250 Gr" required></label>
+      <div class="row"><label class="f"><span>Satuan</span><input id="m-unit" name="unit" value="pcs"></label>
+      <label class="f"><span>Harga /pcs</span><input id="m-price" name="price" class="money" inputmode="numeric"></label></div>
+      <label class="f"><span>Reorder (pcs)</span><input id="m-min" name="minQty" type="number" step="1" min="0"></label>`; }
+    else if (k === 'product') { title = 'harga produk'; form = `
+      <div class="row"><label class="f"><span>Jenis</span><select id="m-kind" name="kind"><option value="roasted">Single origin</option><option value="blend">Blend</option></select></label>
+      <label class="f"><span>Grup</span><select id="m-group" name="group">${opts(GROUPS)}</select></label></div>
+      <label class="f"><span>Beans</span><select id="m-bean" name="beanId" data-src="greens" required></select></label>
+      <div class="row"><label class="f"><span>Ukuran (gram)</span><input id="m-grams" name="grams" type="number" step="any" min="1" required></label>
+      <label class="f"><span>Harga jual (Rp)</span><input id="m-price" name="price" class="money" inputmode="numeric" required></label></div>
+      <label class="f"><span>Kemasan per pcs</span><select id="m-pack" name="packId" data-src="packs" data-ph="Tanpa kemasan"></select></label>
+      <label class="f"><span>Nama produk (kosongkan untuk otomatis)</span><input id="m-name" name="name" placeholder="Otomatis: Beans · ukuran"></label>
+      <div class="calc" id="mCalc">HPP muncul setelah beans dan ukuran diisi.</div>`; }
+    else { title = 'pengaturan'; const c = conf(); form = `
+      <label class="f"><span>Nama usaha</span><input id="m-biz" name="biz" value="${esc(c.bizName)}"></label>
+      <div class="f"><span>Pembagian laba (% dari laba positif)</span><div class="lines-in" id="shareRows">${c.shares.map(shareRow).join('')}</div><button type="button" class="btn ghost sm" id="addShare" style="justify-self:start">+ Penerima</button></div>
+      <div class="row"><label class="f"><span>Saving minimum (Rp)</span><input id="m-smin" name="savingMin" class="money" inputmode="numeric" value="${moneyStr(c.savingMin)}"></label>
+      <label class="f"><span>Saving % laba</span><input id="m-spct" name="savingPct" type="number" step="any" min="0" value="${c.savingPct}"></label></div>
+      <label class="f"><span>Cara hitung laba</span><select id="m-basis" name="basis"><option value="kas" ${c.basis !== 'op' ? 'selected' : ''}>Pemasukan − pengeluaran (seperti Excel)</option><option value="op" ${c.basis === 'op' ? 'selected' : ''}>Tanpa modal masuk &amp; dividen keluar</option></select></label>
+      <div class="f"><span>Payment rutin</span><div class="lines-in" id="routineRows">${c.routine.map(routineRow).join('')}</div><button type="button" class="btn ghost sm" id="addRoutine" style="justify-self:start">+ Payment</button></div>
+      <p class="hint" style="margin:0">Untuk tim: bagikan halaman ini lewat tombol Share dengan akses <b>Contributor</b> supaya mereka bisa mencatat.</p>`; }
+    return `
+    <div class="subbar">${seg('masterSub', k, [['green','Green bean'],['blend','Blend'],['pack','Kemasan'],['product','Daftar harga'],['set','Pengaturan']])}<input type="search" id="mQ" placeholder="Cari…" aria-label="Cari" ${k === 'set' ? 'hidden' : ''}></div>
+    <div class="work">
+      <section class="panel w-only"><header><h2 id="mTitle">${k === 'set' ? 'Pengaturan' : 'Tambah ' + title}</h2></header>
+        <form class="form" id="fMaster"><input type="hidden" name="id" id="m-id">${form}
+          <div class="form-actions"><button class="btn" type="submit">Simpan</button><button class="btn ghost" type="button" id="mCancel" hidden>Batal ubah</button></div>
+        </form></section>
+      <section class="panel" ${k === 'set' ? 'hidden' : ''}><header><h2 id="mListHead"></h2></header><div id="mList"></div></section>
+    </div>`;
+  },
+  bind() {
+    const f = $('#fMaster'), k = UI.masterSub, self = this, titles = {green:'green bean', blend:'blend', pack:'kemasan', product:'harga produk'};
+    const q = $('#mQ'); if (q) q.addEventListener('input', () => self.refresh());
+    f.addEventListener('click', ev => { const b = ev.target.closest('[data-rmrow]'); if (b) { b.closest('.line2').remove(); if (self._upd) self._upd(); } });
+    if (k === 'set') {
+      $('#addShare').addEventListener('click', () => $('#shareRows').insertAdjacentHTML('beforeend', shareRow()));
+      $('#addRoutine').addEventListener('click', () => $('#routineRows').insertAdjacentHTML('beforeend', routineRow()));
+      f.addEventListener('submit', async ev => {
+        ev.preventDefault();
+        const shares = $$('#shareRows .line2').map(r => ({label:$('.sl', r).value.trim(), pct:+$('.sp', r).value || 0})).filter(s => s.label);
+        const routine = $$('#routineRows .line2').map(r => ({label:$('.rl', r).value, amount:+($('.ra', r).value.replace(/\D/g, '') || 0)})).filter(r => r.amount > 0);
+        await guarded(f, () => saveDoc('config/main', {...S.config, bizName:val(f, 'biz') || 'Roastery', shares, routine, savingMin:money(f, 'savingMin'), savingPct:numv(f, 'savingPct'), basis:val(f, 'basis')}), 'Pengaturan tersimpan.');
+      });
+      return;
+    }
+    if (k === 'blend') $('#addRecipe').addEventListener('click', () => { $('#recipeRows').insertAdjacentHTML('beforeend', recipeRow()); refreshSelects($('#recipeRows').lastElementChild); });
+    if (k === 'product') {
+      const kind = $('#m-kind'), bean = $('#m-bean');
+      kind.addEventListener('change', () => { bean.dataset.src = kind.value === 'blend' ? 'blends' : 'greens'; bean.value = ''; refreshSelects(bean.parentElement); if (kind.value === 'blend') f.elements.group.value = 'Blend'; });
+      const upd = () => { const p = {kind:kind.value, beanId:bean.value, grams:numv(f, 'grams'), packId:val(f, 'packId')}; if (!p.beanId || !p.grams) { $('#mCalc').textContent = 'HPP muncul setelah beans dan ukuran diisi.'; return; }
+        const hc = productCost(p), pr = money(f, 'price'); $('#mCalc').innerHTML = `HPP ≈ <b>${rp(hc)}</b>${pr ? ` · margin <b>${rps(pr - hc)}</b> (${pct((pr - hc) / pr)})` : ''}`; };
+      self._upd = upd; f.addEventListener('input', upd); f.addEventListener('change', upd);
+    }
+    const reset = () => { f.reset(); f.elements.id.value = ''; $('#mCancel').hidden = true; $('#mTitle').textContent = 'Tambah ' + titles[k];
+      if (k === 'blend') $('#recipeRows').innerHTML = '';
+      if (k === 'product') { $('#m-bean').dataset.src = 'greens'; refreshSelects(f); if (self._upd) self._upd(); } };
+    self._reset = reset;
+    $('#mCancel').addEventListener('click', reset);
+    f.addEventListener('submit', async ev => {
+      ev.preventDefault();
+      const coll = MCOLL[k], id = val(f, 'id') || (k.slice(0, 1) + '_' + newId()), old = S[coll][id] || {};
+      let d;
+      if (k === 'green') d = {name:val(f, 'name'), category:val(f, 'category'), price:money(f, 'price'), minKg:numv(f, 'minKg'), minRoastedKg:numv(f, 'minRoastedKg'), supplier:val(f, 'supplier')};
+      else if (k === 'blend') { const recipe = $$('#recipeRows .line2').map(r => ({greenId:$('select', r).value, pct:+$('.rp', r).value || 0})).filter(r => r.greenId && r.pct > 0);
+        const sum = recipe.reduce((a, r) => a + r.pct, 0); if (recipe.length && Math.abs(sum - 100) > 0.01) return toast(`Total resep ${nf(sum)}%, harus 100%.`, true);
+        d = {name:val(f, 'name'), cogs:money(f, 'cogs'), minKg:numv(f, 'minKg'), recipe}; }
+      else if (k === 'pack') d = {name:val(f, 'name'), unit:val(f, 'unit') || 'pcs', price:money(f, 'price'), minQty:numv(f, 'minQty')};
+      else { const kind = val(f, 'kind'), beanId = val(f, 'beanId'), grams = numv(f, 'grams'); if (!beanId) return toast('Pilih beans.', true); if (!(grams > 0)) return toast('Isi ukuran gram.', true);
+        d = {kind, beanId, grams, price:money(f, 'price'), packId:val(f, 'packId'), group:val(f, 'group'), name:val(f, 'name') || `${itemName(kind === 'blend' ? 'blend' : 'green', beanId)} · ${sizeLabel(grams)}`}; }
+      if (!d.name) return toast('Isi nama dulu.', true);
+      const ok = await guarded(f, () => saveDoc(coll + '/' + id, {...old, ...d, id, active:old.active === false ? false : true}), old.name ? 'Perubahan tersimpan.' : 'Ditambahkan.');
+      if (ok) reset();
+    });
+  },
+  edit(id) {
+    const k = UI.masterSub, x = S[MCOLL[k]][id], f = $('#fMaster'); if (!x || !f) return;
+    f.elements.id.value = id;
+    const set = (n, v) => { if (f.elements[n]) f.elements[n].value = v ?? ''; };
+    if (k === 'green') { set('name', x.name); set('category', x.category || 'Lainnya'); set('price', moneyStr(x.price)); set('minKg', x.minKg || ''); set('minRoastedKg', x.minRoastedKg || ''); set('supplier', x.supplier); }
+    if (k === 'blend') { set('name', x.name); set('cogs', moneyStr(x.cogs)); set('minKg', x.minKg || '');
+      $('#recipeRows').innerHTML = (x.recipe || []).map(recipeRow).join('');
+      $$('#recipeRows .line2').forEach((r, i) => { $('select', r).dataset.want = x.recipe[i].greenId; $('.rp', r).value = x.recipe[i].pct; }); refreshSelects(f); }
+    if (k === 'pack') { set('name', x.name); set('unit', x.unit || 'pcs'); set('price', moneyStr(x.price)); set('minQty', x.minQty || ''); }
+    if (k === 'product') { set('kind', x.kind); set('group', x.group || 'Lainnya'); const b = $('#m-bean'); b.dataset.src = x.kind === 'blend' ? 'blends' : 'greens'; b.dataset.want = x.beanId;
+      set('grams', x.grams); set('price', moneyStr(x.price)); $('#m-pack').dataset.want = x.packId || ''; set('name', x.name); refreshSelects(f); if (this._upd) this._upd(); }
+    $('#mTitle').textContent = 'Ubah: ' + x.name; $('#mCancel').hidden = false;
+    f.scrollIntoView({behavior:'smooth', block:'start'});
+  },
+  refresh() {
+    if (UI.masterSub === 'set') return;
+    if (!ready()) { $('#mList').innerHTML = loadingHTML(); return; }
+    const k = UI.masterSub, coll = MCOLL[k], q = ($('#mQ')?.value || '').toLowerCase();
+    const all = Object.values(S[coll]).filter(x => !q || (x.name || '').toLowerCase().includes(q)).sort((a, b) => (a.active === false) - (b.active === false) || (k === 'product' ? GROUPS.indexOf(a.group) - GROUPS.indexOf(b.group) : 0) || (a.name || '').localeCompare(b.name || '', 'id') || (a.grams || 0) - (b.grams || 0));
+    $('#mListHead').textContent = `Daftar ${({green:'green bean', blend:'blend', pack:'kemasan', product:'harga'})[k]} · ${Object.keys(S[coll]).length}`;
+    if (!all.length) { $('#mList').innerHTML = `<p class="empty">${q ? 'Tidak ada yang cocok.' : 'Belum ada data. Isi formulir di samping.'}</p>`; return; }
+    const detail = x => k === 'green' ? [x.category, x.price ? rp(x.price) + '/kg' : '', x.minKg ? `reorder ${nf(x.minKg)} kg` : '', x.supplier].filter(Boolean).join(' · ')
+      : k === 'blend' ? [x.cogs ? 'COGS ' + rp(x.cogs) + '/kg' : '', x.minKg ? `reorder ${nf(x.minKg)} kg` : '', (x.recipe || []).map(r => `${gName(r.greenId)} ${nf(r.pct)}%`).join(' + ')].filter(Boolean).join(' · ')
+      : k === 'pack' ? [`${x.unit || 'pcs'}`, x.price ? rp(x.price) + '/pcs' : 'harga belum diisi', x.minQty ? `reorder ${nf(x.minQty, 0)}` : ''].filter(Boolean).join(' · ')
+      : `${x.group || ''} · ${rp(x.price)} · HPP ${rp(productCost(x))}${x.packId ? ' · ' + pName(x.packId) : ''}`;
+    $('#mList').innerHTML = `<div class="tw"><table><tbody>${all.map(x => `<tr class="${x.active === false ? 'muted' : ''}"><td><b>${esc(x.name)}</b>${x.active === false ? ' <span class="pill">Diarsipkan</span>' : ''}<span class="sub">${esc(detail(x))}</span></td><td><div class="actions w-only"><button class="btn sm ghost" data-medit="${esc(x.id)}">Ubah</button><button class="btn sm ghost" data-march="${esc(x.id)}">${x.active === false ? 'Aktifkan' : 'Arsipkan'}</button></div></td></tr>`).join('')}</tbody></table></div>`;
+  }
+};
+
+/* ================= global events ================= */
+document.addEventListener('click', async ev => {
+  const t = ev.target.closest('button'); if (!t) return;
+  if (t.dataset.tab) { UI.tab = t.dataset.tab; store.set('rs.tab', UI.tab); renderTab(); return; }
+  if (t.dataset.seg) {
+    UI[t.dataset.seg] = t.dataset.val;
+    if (['saleFilter','stokFilter','lapSub'].includes(t.dataset.seg)) { $$(`[data-seg=${t.dataset.seg}]`).forEach(b => b.setAttribute('aria-pressed', b.dataset.val === UI[t.dataset.seg])); refreshView(); }
+    else renderTab();
+    return;
+  }
+  if (t.dataset.medit) { VIEWS.master.edit(t.dataset.medit); return; }
+  if (t.dataset.march) { const coll = MCOLL[UI.masterSub], x = S[coll][t.dataset.march]; if (!x) return;
+    try { await updDoc(coll + '/' + x.id, {active:x.active === false}); toast(x.active === false ? 'Diaktifkan lagi.' : 'Diarsipkan. Riwayatnya tetap tersimpan.'); } catch (err) { toast(failMsg(err), true); } return; }
+  const delId = t.dataset.del, paidId = t.dataset.paid;
+  if (delId || paidId) {
+    const e = S.entries.find(x => x.id === (delId || paidId)); if (!e) return;
+    if (delId) {
+      if (!t.classList.contains('confirm')) { t.classList.add('confirm'); t.textContent = 'Yakin hapus?'; setTimeout(() => { if (t.isConnected) { t.classList.remove('confirm'); t.textContent = 'Hapus'; } }, 3500); return; }
+      t.disabled = true;
+      try { await patchEntry(e, {deleted:true}); toast('Transaksi dihapus.'); } catch (err) { t.disabled = false; toast(failMsg(err), true); }
+    } else {
+      t.disabled = true;
+      try { await patchEntry(e, {paid:true, paidDate:today()}); toast('Ditandai lunas hari ini dan masuk buku kas.'); } catch (err) { t.disabled = false; toast(failMsg(err), true); }
+    }
+  }
+});
+document.addEventListener('input', ev => {
+  const el = ev.target;
+  if (el.classList && el.classList.contains('money')) { const d = el.value.replace(/\D/g, ''); el.value = d ? (+d).toLocaleString('id-ID') : ''; }
+});
+$('#month').addEventListener('change', ev => { if (ev.target.value) { UI.month = ev.target.value; if (UI.tab === 'produksi') renderTab(); else refreshView(); } });
+
+/* ================= data ================= */
+function rebuildEntries() {
+  const out = [];
+  for (const [docId, d] of Object.entries(S.ledger)) {
+    const ents = d && d.entries || {};
+    for (const [id, e] of Object.entries(ents)) if (e && !e.deleted && e.type && e.date) out.push({...e, id, _doc:docId});
+  }
+  S.entries = out;
+}
+function onErr(err) { if (err && err.code === 'revoked') setStatus('off', 'Akses ke data berakhir'); else setStatus('off', 'Koneksi data terputus, muat ulang halaman'); }
+function subscribe() {
+  ['greens','blends','packs','products'].forEach(name => db.collection(name).onSnapshot(snap => {
+    const o = {}; snap.docs.forEach(d => { o[d.id] = {...d.data(), id:d.id}; }); S[name] = o; S.loaded.add(name); changed();
+  }, onErr));
+  db.doc('config/main').onSnapshot(s => { S.config = s.exists ? s.data() : {}; changed(); }, onErr);
+  db.collection('ledger').onSnapshot(snap => {
+    const o = {}; snap.docs.forEach(d => { o[d.id] = d.data(); }); S.ledger = o; S.loaded.add('ledger'); rebuildEntries(); changed();
+  }, onErr);
+}
+async function init() {
+  if (!window.claude || !window.claude.use) { S.offline = true; setStatus('off', 'Buka di Claude untuk menyimpan data'); refreshView(); return; }
+  try { [db, user, dl] = await Promise.all([claude.use('db'), claude.use('user'), claude.use('downloads')]); } catch {}
+  if (!db) { S.offline = true; setStatus('off', 'Penyimpanan tidak tersedia, masuk ke akun Claude'); document.body.classList.add('ro'); refreshView(); return; }
+  if (user) { try { uid = await user.id(); } catch {} try { const c = await user.can('data.write'); if (c === false) canWrite = false; } catch {} }
+  document.body.classList.toggle('ro', !canWrite);
+  setStatus('on', window.claude.__localShim ? 'Mode lokal · data hanya di browser ini' : canWrite ? 'Tersinkron dengan tim' : 'Mode lihat saja');
+  subscribe();
+  refreshView();
+}
+renderShell();
+renderTab();
+init();

@@ -1,0 +1,31 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Yantos Roastery</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="styles.css">
+
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <svg width="38" height="38" viewBox="0 0 38 38" aria-hidden="true"><rect width="38" height="38" rx="10" fill="var(--roast-soft)"/><ellipse cx="19" cy="19" rx="9.5" ry="12.5" transform="rotate(28 19 19)" fill="var(--roast)"/><path d="M14.2 9.6c5.5 4.2 4.1 14.4 9.6 18.8" stroke="var(--roast-soft)" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+      <div><h1 id="bizName">Yantos Roastery</h1><p>Gudang, produksi &amp; keuangan</p></div>
+    </div>
+    <div class="status" id="status"><span class="dot"></span><span id="statusText">Menghubungkan…</span></div>
+  </header>
+  <nav class="tabs" id="tabs" role="tablist" aria-label="Menu"></nav>
+  <div class="toolbar">
+    <h2 id="viewTitle"></h2>
+    <div class="period" id="periodBox"><label for="month">Periode</label><input type="month" id="month"></div>
+  </div>
+  <p class="notice ro-note">Kamu membuka dalam mode lihat saja. Minta pemilik memberi akses <b>Contributor</b> agar bisa mencatat transaksi.</p>
+  <main id="view"></main>
+</div>
+<div id="toast" hidden></div>
+<datalist id="custList"></datalist>
+<datalist id="suppList"></datalist>
+
+<script src="claude-shim.js"></script>
+<script src="app.js"></script>
+
+</body></html>

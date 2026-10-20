@@ -1,0 +1,10 @@
+{
+  "active": true,
+  "category": "Espresso",
+  "id": "g_cotton-candy",
+  "minKg": 5,
+  "minRoastedKg": 3,
+  "name": "Cotton Candy",
+  "price": 300000,
+  "supplier": ""
+}

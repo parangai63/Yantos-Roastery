@@ -1,0 +1,10 @@
+{
+  "active": true,
+  "category": "Espresso",
+  "id": "g_peach",
+  "minKg": 5,
+  "minRoastedKg": 3,
+  "name": "Peach",
+  "price": 300000,
+  "supplier": ""
+}

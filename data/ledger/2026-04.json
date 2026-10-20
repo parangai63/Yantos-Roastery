@@ -1,0 +1,77 @@
+{
+  "entries": {
+    "xl-2-in": {
+      "amount": 8664066,
+      "at": "2026-04-01T00:00:00.002Z",
+      "by": "",
+      "category": "Modal/Setoran Pemilik",
+      "date": "2026-04-01",
+      "desc": "Cash BCA (setoran)",
+      "dir": "in",
+      "note": "",
+      "src": "excel",
+      "type": "kas"
+    },
+    "xl-3-out": {
+      "amount": 170000,
+      "at": "2026-04-01T00:00:00.005Z",
+      "by": "",
+      "category": "Pengeluaran Lainnya",
+      "date": "2026-04-01",
+      "desc": "Top Up Figma",
+      "dir": "out",
+      "note": "",
+      "src": "excel",
+      "type": "kas"
+    },
+    "xl-4-out": {
+      "amount": 1100000,
+      "at": "2026-04-16T00:00:00.003Z",
+      "by": "",
+      "category": "Bahan Baku (Green Bean)",
+      "date": "2026-04-16",
+      "desc": "Beli GB Gayo",
+      "dir": "out",
+      "note": "",
+      "src": "excel",
+      "type": "kas"
+    },
+    "xl-5-out": {
+      "amount": 1755000,
+      "at": "2026-04-18T00:00:00.003Z",
+      "by": "",
+      "category": "Bahan Baku (Green Bean)",
+      "date": "2026-04-18",
+      "desc": "Beli Beans Komersil Anaerob",
+      "dir": "out",
+      "note": "",
+      "src": "excel",
+      "type": "kas"
+    },
+    "xl-6-out": {
+      "amount": 177600,
+      "at": "2026-04-19T00:00:00.003Z",
+      "by": "",
+      "category": "Pengeluaran Lainnya",
+      "date": "2026-04-19",
+      "desc": "Server Yanto Alpha",
+      "dir": "out",
+      "note": "",
+      "src": "excel",
+      "type": "kas"
+    },
+    "xl-7-in": {
+      "amount": 18240000,
+      "at": "2026-04-19T00:00:00.004Z",
+      "by": "",
+      "category": "Pendapatan Lainnya",
+      "date": "2026-04-19",
+      "desc": "Pendapatan Parang Coffee (50%)",
+      "dir": "in",
+      "note": "",
+      "src": "excel",
+      "type": "kas"
+    }
+  },
+  "month": "2026-04"
+}

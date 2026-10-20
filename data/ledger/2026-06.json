@@ -1,0 +1,77 @@
+{
+  "entries": {
+    "xl-30-out": {
+      "amount": 4687500,
+      "at": "2026-06-12T00:00:00.003Z",
+      "by": "",
+      "category": "Bahan Baku (Green Bean)",
+      "date": "2026-06-12",
+      "desc": "Payment Beans Filter Exotic",
+      "dir": "out",
+      "note": "",
+      "src": "excel",
+      "type": "kas"
+    },
+    "xl-31-out": {
+      "amount": 4600000,
+      "at": "2026-06-19T00:00:00.003Z",
+      "by": "",
+      "category": "Bahan Baku (Green Bean)",
+      "date": "2026-06-19",
+      "desc": "Pembelian GB Kudus Natural Anaerob",
+      "dir": "out",
+      "note": "",
+      "src": "excel",
+      "type": "kas"
+    },
+    "xl-32-out": {
+      "amount": 100000,
+      "at": "2026-06-21T00:00:00.003Z",
+      "by": "",
+      "category": "Payment Karyawan Operasional",
+      "date": "2026-06-21",
+      "desc": "Payment Luthfi",
+      "dir": "out",
+      "note": "",
+      "src": "excel",
+      "type": "kas"
+    },
+    "xl-33-in": {
+      "amount": 1200000,
+      "at": "2026-06-25T00:00:00.002Z",
+      "by": "",
+      "category": "Penjualan Kopi",
+      "date": "2026-06-25",
+      "desc": "Pendapatan Penjualan Beans (Dungo Kauman)",
+      "dir": "in",
+      "note": "",
+      "src": "excel",
+      "type": "kas"
+    },
+    "xl-34-out": {
+      "amount": 820000,
+      "at": "2026-06-26T00:00:00.003Z",
+      "by": "",
+      "category": "Pembelian Alat",
+      "date": "2026-06-26",
+      "desc": "Pembelian Kontainer",
+      "dir": "out",
+      "note": "",
+      "src": "excel",
+      "type": "kas"
+    },
+    "xl-35-in": {
+      "amount": 3000000,
+      "at": "2026-06-27T00:00:00.002Z",
+      "by": "",
+      "category": "Penjualan Kopi",
+      "date": "2026-06-27",
+      "desc": "Pendapatan Penjualan (Kopi Parang)",
+      "dir": "in",
+      "note": "",
+      "src": "excel",
+      "type": "kas"
+    }
+  },
+  "month": "2026-06"
+}

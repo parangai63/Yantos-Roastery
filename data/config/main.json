@@ -1,0 +1,38 @@
+{
+  "basis": "kas",
+  "bizName": "Yantos Roastery",
+  "routine": [
+    {
+      "amount": 200000,
+      "label": "Payment Editor"
+    },
+    {
+      "amount": 100000,
+      "label": "Payment Tukang"
+    },
+    {
+      "amount": 1000000,
+      "label": "Payment Roaster"
+    },
+    {
+      "amount": 200000,
+      "label": "Payment Admin"
+    },
+    {
+      "amount": 100000,
+      "label": "Payment Karyawan Operasional"
+    }
+  ],
+  "savingMin": 1000000,
+  "savingPct": 10,
+  "shares": [
+    {
+      "label": "Dana Yayasan Yantos",
+      "pct": 2.5
+    },
+    {
+      "label": "Transfer Pak Munir",
+      "pct": 40
+    }
+  ]
+}

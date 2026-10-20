@@ -1,0 +1,10 @@
+{
+  "active": true,
+  "category": "Filter",
+  "id": "g_supernova",
+  "minKg": 3,
+  "minRoastedKg": 1.5,
+  "name": "Supernova",
+  "price": 375000,
+  "supplier": ""
+}

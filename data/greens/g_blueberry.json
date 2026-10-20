@@ -1,0 +1,10 @@
+{
+  "active": true,
+  "category": "Espresso",
+  "id": "g_blueberry",
+  "minKg": 5,
+  "minRoastedKg": 3,
+  "name": "Blueberry",
+  "price": 300000,
+  "supplier": ""
+}
