@@ -81,6 +81,37 @@ Cara paling sedikit mengubah `app.js`: tulis implementasi baru dengan API yang s
 Kalau digabung ke Parang-ops (React + Express + PostgreSQL), lebih baik pindahkan
 `compute()` ke backend atau modul TypeScript terpisah dan petakan koleksi di atas ke tabel.
 
+## Versi baru: backend/ + frontend/ (migrasi berjalan)
+
+Stack sama dengan parang-ops (Express + Prisma + PostgreSQL, React + Vite + Tailwind),
+dengan beberapa perbedaan yang disengaja: logika bisnis di `services/` (bukan di controller),
+navigasi pakai react-router, dan desain ledger dipertahankan.
+
+```
+backend/
+  prisma/schema.prisma   GreenBean, Blend(+BlendRecipeItem), Pack, Product, Config, LedgerEntry
+  prisma/seed.ts         isi DB dari data/ (pakai src/lib/legacyExport.ts)
+  src/engine/            compute.ts (port compute() lama), types.ts, vocab.ts, compute.test.ts
+  src/services/          stateService (muat DB → engine), ledgerService (validasi & tulis),
+                         masterService, reportService (laporan siap tampil)
+  src/controllers/, src/routes/   tipis; /api/master, /api/config, /api/meta, /api/ledger, /api/reports/*
+frontend/src/
+  api/, types/, utils/   format.ts (rp, nf, dLabel…), ledger.ts (describe() lama)
+  context/AppData.tsx    master + periode; panggil changed() setelah simpan agar laporan dimuat ulang
+  pages/                 satu halaman per tab lama
+```
+
+- `LedgerEntry`: kolom umum (`type`, `date` string YYYY-MM-DD, `at`, `by`, `deleted`) +
+  `data` JSON berisi field per jenis. Engine membaca bentuk datar lewat `lib/mappers.ts`.
+- Stok, HPP, kas tetap **tidak disimpan**; `stateService.loadState()` menghitung ulang per request.
+- Penjualan: klien hanya kirim `productId`, `qty`, `price`; detail item diambil server dari daftar harga.
+- Semua tab lama sudah diport ke React. Acuan tampilan & perilaku: `original/yantos-roastery-artifact.html`
+  (kelas CSS di `frontend/src/index.css` disalin dari sana). Stok & biaya per item untuk hitungan
+  langsung di form diambil dari `GET /api/reports/costs` lewat `useAppData().qty/cost/productCost`.
+- Supabase: `DATABASE_URL` lewat pooler 6543 (`?pgbouncer=true`), `DIRECT_URL` lewat 5432 untuk migrate.
+- Belum ada autentikasi (header `X-Actor` hanya mengisi `by`).
+- Setelah mengubah engine: `cd backend && npm test`. Test memakai data/ langsung, tanpa DB.
+
 ## Angka patokan (harus tetap sama setelah refactor)
 
 Dengan `seed.json` bawaan, periode Oktober 2026:

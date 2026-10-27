@@ -1,0 +1,145 @@
+// Yantos Roastery — skema database.
+//
+// Desain ledger dipertahankan dari versi artifact: stok, HPP rata-rata,
+// saldo kas, dan piutang TIDAK disimpan. Semuanya dihitung ulang oleh
+// src/engine/compute.ts dari tabel LedgerEntry setiap kali dibaca.
+
+datasource db {
+  provider = "postgresql"
+  url       = env("DATABASE_URL")
+  // Supabase: DATABASE_URL lewat pooler transaksi (6543), DIRECT_URL lewat
+  // session pooler (5432) untuk prisma migrate. Lokal: isi keduanya sama.
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ---------------------------------------------------------------------------
+// Master data (id lama dipertahankan: g_*, b_*, p_*, pr_*)
+// ---------------------------------------------------------------------------
+
+model GreenBean {
+  id           String  @id
+  name         String
+  category     String  @default("")
+  price        Decimal @default(0) @db.Decimal(14, 2) // harga referensi per kg
+  minKg        Decimal @default(0) @db.Decimal(10, 3) // reorder green
+  minRoastedKg Decimal @default(0) @db.Decimal(10, 3) // reorder roasted
+  supplier     String  @default("")
+  active       Boolean @default(true)
+
+  recipeItems BlendRecipeItem[]
+  products    Product[]         @relation("ProductBean")
+
+  @@map("green_beans")
+}
+
+model Blend {
+  id     String  @id
+  name   String
+  cogs   Decimal @default(0) @db.Decimal(14, 2) // COGS referensi per kg
+  minKg  Decimal @default(0) @db.Decimal(10, 3)
+  active Boolean @default(true)
+
+  recipe   BlendRecipeItem[]
+  products Product[]         @relation("ProductBlend")
+
+  @@map("blends")
+}
+
+model BlendRecipeItem {
+  id      String    @id @default(cuid())
+  blendId String
+  blend   Blend     @relation(fields: [blendId], references: [id], onDelete: Cascade)
+  greenId String
+  green   GreenBean @relation(fields: [greenId], references: [id])
+  pct     Decimal   @db.Decimal(6, 3)
+
+  @@map("blend_recipe_items")
+}
+
+model Pack {
+  id     String  @id
+  name   String
+  unit   String  @default("pcs")
+  price  Decimal @default(0) @db.Decimal(14, 2)
+  minQty Decimal @default(0) @db.Decimal(10, 0)
+  active Boolean @default(true)
+
+  products Product[]
+
+  @@map("packs")
+}
+
+enum ProductKind {
+  roasted
+  blend
+}
+
+model Product {
+  id     String      @id
+  name   String
+  kind   ProductKind
+  // beanId menunjuk GreenBean (kind=roasted) atau Blend (kind=blend).
+  // Relasi dipisah supaya foreign key tetap valid.
+  greenId String?
+  green   GreenBean?  @relation("ProductBean", fields: [greenId], references: [id])
+  blendId String?
+  blend   Blend?      @relation("ProductBlend", fields: [blendId], references: [id])
+  grams   Int
+  price   Decimal     @db.Decimal(14, 2)
+  group   String      @default("Lainnya")
+  packId  String?
+  pack    Pack?       @relation(fields: [packId], references: [id])
+  active  Boolean     @default(true)
+
+  @@map("products")
+}
+
+// Satu baris saja (id = "main"). shares & routine berbentuk daftar kecil
+// yang selalu dibaca utuh, jadi disimpan sebagai JSON.
+model Config {
+  id        String  @id @default("main")
+  bizName   String  @default("Yantos Roastery")
+  basis     String  @default("kas") // "kas" | "op"
+  savingPct Decimal @default(10) @db.Decimal(6, 3)
+  savingMin Decimal @default(1000000) @db.Decimal(14, 2)
+  shares    Json    @default("[]") // [{ label, pct }]
+  routine   Json    @default("[]") // [{ label, amount }]
+
+  @@map("config")
+}
+
+// ---------------------------------------------------------------------------
+// Ledger
+// ---------------------------------------------------------------------------
+
+enum LedgerType {
+  opening
+  green_in
+  pack_in
+  roast
+  blend
+  usage
+  adjust
+  sale
+  kas
+}
+
+model LedgerEntry {
+  id      String     @id
+  type    LedgerType
+  date    String     @db.VarChar(10) // YYYY-MM-DD, sama seperti versi lama (urutan = string)
+  at      DateTime   @default(now()) // waktu input, pemecah urutan di tanggal yang sama
+  by      String     @default("")
+  deleted Boolean    @default(false) // hapus = soft delete, entri tidak pernah dihapus fisik
+  // Field khusus per jenis (greenId, kg, total, paid, items, ...).
+  // Bentuknya didefinisikan & divalidasi di src/engine/types.ts dan ledgerService.
+  data    Json       @default("{}")
+
+  @@index([date])
+  @@index([type, date])
+  @@map("ledger_entries")
+}

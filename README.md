@@ -25,11 +25,42 @@ Buka http://localhost:8000. Tambahkan `?reset=1` di URL untuk mengembalikan data
   Data yang diinput di sana setelah 20 Okt 2026 tidak ikut di repo ini.
 - Repo ini berisi data keuangan asli. Buat repository GitHub sebagai **Private**.
 
+## Versi baru: backend + frontend (sedang dimigrasi)
+
+Stack-nya sama dengan parang-ops: **Express + TypeScript + Prisma + PostgreSQL** di `backend/`,
+dan **React 18 + Vite + TypeScript + Tailwind** di `frontend/`. Butuh Node.js 20+ dan Docker.
+
+```bash
+docker compose up -d                 # PostgreSQL di localhost:5433
+
+cd backend
+cp .env.example .env
+npm install
+npx prisma migrate dev               # buat tabel
+npm run db:seed                      # isi dari folder data/
+npm test                             # cek angka patokan (lihat CLAUDE.md)
+npm run dev                          # API di http://localhost:4000
+
+cd ../frontend
+npm install
+npm run dev                          # UI di http://localhost:5174
+```
+
+Halaman yang sudah dipindah ke React: Ringkasan, Stok (tabel), Kas & Pembelian, dan Laporan.
+Produksi, Penjualan, Data Master, dan form stok opname masih memakai versi lama di `src/`.
+API-nya sudah tersedia, tinggal form-nya.
+
+**Belum ada login.** Nama pencatat hanya dikirim lewat header. Jangan buka API ke internet
+sebelum autentikasi dipasang.
+
 ## Isi folder
 
 | Folder | Isi |
 | --- | --- |
-| `src/` | Aplikasi (HTML, CSS, JS) + `seed.json` |
+| `backend/` | API baru (Express + Prisma). Engine hitung ada di `backend/src/engine/` |
+| `frontend/` | UI baru (React + Vite + Tailwind) |
+| `docker-compose.yml` | PostgreSQL untuk development |
+| `src/` | Aplikasi lama (HTML, CSS, JS) + `seed.json`, masih dipakai sampai migrasi selesai |
 | `data/` | Ekspor database per dokumen (JSON) |
 | `scripts/build_seed.py` | Menyusun ulang `src/seed.json` dari `data/` |
 | `original/` | File artifact asli, untuk referensi |
