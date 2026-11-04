@@ -1,6 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 // Warna menunjuk ke CSS variables di src/index.css (diambil dari token
-// src/styles.css versi lama), jadi mode gelap ikut otomatis.
+// src/styles.css versi lama). Tema: glassmorphism, selalu mode terang.
 export default {
   content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
   theme: {

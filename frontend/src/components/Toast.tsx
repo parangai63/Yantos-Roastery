@@ -15,7 +15,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <Ctx.Provider value={show}>
       {children}
       {msg && (
-        <div role="status" className={`fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-lg px-4 py-2.5 text-sm shadow-lg ${msg.err ? "bg-bad text-white" : "bg-ink text-bg"}`}>
+        <div role="status" className={`fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-xl border border-white/20 px-4 py-2.5 text-sm text-white shadow-lg ${msg.err ? "bg-bad" : "bg-ink"}`}>
           {msg.text}
         </div>
       )}

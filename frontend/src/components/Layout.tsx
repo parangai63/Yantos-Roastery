@@ -29,22 +29,24 @@ export default function Layout() {
   const status = error ? ["off", "Server tidak terhubung"] : master ? ["on", "Tersambung ke server"] : ["", "Menghubungkan…"];
 
   return (
-    <div className="mx-auto max-w-[1240px] px-4 pb-[72px] pt-5 sm:px-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div className="brand flex min-w-0 items-center gap-3">
-          <Logo />
-          <div>
-            <h1>{config?.bizName || "Yantos Roastery"}</h1>
-            <p>Gudang, produksi &amp; keuangan</p>
+    <div className="mx-auto max-w-[1240px] px-4 pb-[72px] pt-3 sm:px-6">
+      <div className="topbar">
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <div className="brand flex min-w-0 items-center gap-3">
+            <Logo />
+            <div>
+              <h1>{config?.bizName || "Yantos Roastery"}</h1>
+              <p>Gudang, produksi &amp; keuangan</p>
+            </div>
           </div>
-        </div>
-        <div className={`status ${status[0]}`}><span className="dot" /><span>{status[1]}</span></div>
-      </header>
-      <nav className="tabs" aria-label="Menu">
-        {TABS.map(([path, label]) => (
-          <NavLink key={path} to={path} end className={({ isActive }) => (isActive ? "active" : "")}>{label}</NavLink>
-        ))}
-      </nav>
+          <div className={`status ${status[0]}`}><span className="dot" /><span>{status[1]}</span></div>
+        </header>
+        <nav className="tabs" aria-label="Menu">
+          {TABS.map(([path, label]) => (
+            <NavLink key={path} to={path} end className={({ isActive }) => (isActive ? "active" : "")}>{label}</NavLink>
+          ))}
+        </nav>
+      </div>
       <div className="toolbar">
         <h2>{tab[1]}</h2>
         {tab[2] && (
