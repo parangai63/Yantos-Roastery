@@ -1,5 +1,7 @@
-// Kosong di development: Vite mem-proxy /api ke http://localhost:4000 (vite.config.ts).
-export const API_URL = import.meta.env.VITE_API_URL || "";
+// Kosong (disarankan): /api di domain yang sama — dev diproxy Vite (VITE_API_PROXY_TARGET),
+// prod di-rewrite vercel.json. Diisi: browser memanggil backend langsung (butuh CORS_ORIGIN
+// di backend). "/" di akhir dan "/api" yang tak sengaja ikut ditulis dibuang. Lihat .env.example.
+export const API_URL = (import.meta.env.VITE_API_URL ?? "").trim().replace(/\/+$/, "").replace(/\/api$/, "");
 
 /** Dipakai semua file api/*.ts: lempar Error berisi pesan server ({ message }), seperti parang-ops. */
 export async function handleResponse<T>(res: Response): Promise<T> {
