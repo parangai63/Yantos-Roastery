@@ -10,6 +10,7 @@ export const masterApi = {
     api(id ? `/master/${kind}/${id}` : `/master/${kind}`, { method: id ? "PUT" : "POST", body }),
   setActive: (kind: keyof MasterData, id: string, active: boolean) =>
     api(`/master/${kind}/${id}/active`, { method: "PATCH", body: { active } }),
+  remove: (kind: keyof MasterData, id: string) => api<void>(`/master/${kind}/${id}`, { method: "DELETE" }),
   config: () => api<Config>("/config"),
   saveConfig: (body: Config) => api<Config>("/config", { method: "PUT", body }),
 };

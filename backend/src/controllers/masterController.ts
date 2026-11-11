@@ -32,6 +32,11 @@ export async function setActive(req: Request, res: Response) {
   res.json(await master.setActive(kindParam(req), req.params.id, req.body.active !== false));
 }
 
+export async function remove(req: Request, res: Response) {
+  await master.removeMaster(kindParam(req), req.params.id);
+  res.status(204).end();
+}
+
 export async function getConfig(_req: Request, res: Response) {
   res.json(await master.getConfig());
 }

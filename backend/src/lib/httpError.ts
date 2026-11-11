@@ -8,6 +8,7 @@ export class HttpError extends Error {
 
 export const badRequest = (msg: string) => new HttpError(400, msg);
 export const notFound = (msg: string) => new HttpError(404, msg);
+export const conflict = (msg: string) => new HttpError(409, msg);
 
 // Membungkus handler async supaya error dilempar ke errorHandler.
 export const handle =

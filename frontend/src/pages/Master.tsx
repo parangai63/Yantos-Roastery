@@ -1,10 +1,11 @@
 // Port VIEWS.master: green bean, blend (+resep), kemasan, daftar harga, pengaturan.
-// Data master tidak dihapus, hanya diarsipkan, supaya riwayat ledger tetap terbaca.
+// Item yang sudah punya riwayat hanya bisa diarsipkan supaya riwayat ledger tetap terbaca;
+// hapus permanen hanya untuk item yang belum pernah dipakai (server yang memeriksa).
 
 import { useRef, useState, type FormEvent, type ReactNode } from "react";
 import { masterApi } from "../api";
 import { useToast } from "../components/Toast";
-import { ItemSelect, Loading, MoneyInput, Panel, Pill, Segmented } from "../components/ui";
+import { DeleteButton, ItemSelect, Loading, MoneyInput, Panel, Pill, Segmented } from "../components/ui";
 import { useAppData } from "../context/AppData";
 import type { Blend, Config, GreenBean, MasterData, Pack, Product } from "../types";
 import { moneyStr, nf, num, parseMoney, pct, rp, rps, sizeLabel } from "../utils/format";
@@ -52,7 +53,7 @@ export default function Master() {
           </Panel>
         </div>
         <Panel title={`Daftar ${LIST_TITLE[sub]} · ${list.length}`}>
-          <MasterList sub={sub} list={list} q={q} onEdit={edit} />
+          <MasterList sub={sub} list={list} q={q} editId={editId} onEdit={edit} onCancelEdit={() => setEditId(null)} />
         </Panel>
       </div>
     </div>
@@ -205,7 +206,9 @@ function MasterForm({ sub, item, onDone }: { sub: Exclude<Sub, "set">; item?: It
   );
 }
 
-function MasterList({ sub, list, q, onEdit }: { sub: Exclude<Sub, "set">; list: Item[]; q: string; onEdit: (id: string) => void }) {
+function MasterList({ sub, list, q, editId, onEdit, onCancelEdit }: {
+  sub: Exclude<Sub, "set">; list: Item[]; q: string; editId: string | null; onEdit: (id: string) => void; onCancelEdit: () => void;
+}) {
   const { master, meta, productCost, changed } = useAppData();
   const toast = useToast();
   if (!master || !meta) return null;
@@ -235,6 +238,17 @@ function MasterList({ sub, list, q, onEdit }: { sub: Exclude<Sub, "set">; list: 
     }
   };
 
+  const remove = async (x: Item) => {
+    try {
+      await masterApi.remove(KIND[sub], x.id);
+      toast(`${x.name} dihapus.`);
+      if (editId === x.id) onCancelEdit();
+      changed();
+    } catch (e) {
+      toast((e as Error).message, true);
+    }
+  };
+
   return (
     <div className="tw">
       <table className="tbl">
@@ -246,6 +260,7 @@ function MasterList({ sub, list, q, onEdit }: { sub: Exclude<Sub, "set">; list: 
                 <div className="actions">
                   <button type="button" className="btn btn-sm btn-ghost" onClick={() => onEdit(x.id)}>Ubah</button>
                   <button type="button" className="btn btn-sm btn-ghost" onClick={() => toggle(x)}>{x.active === false ? "Aktifkan" : "Arsipkan"}</button>
+                  <DeleteButton onConfirm={() => remove(x)} />
                 </div>
               </td>
             </tr>

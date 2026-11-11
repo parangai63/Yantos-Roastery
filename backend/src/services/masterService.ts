@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import prisma from "../prismaClient";
-import { badRequest, notFound } from "../lib/httpError";
+import { badRequest, conflict, notFound } from "../lib/httpError";
 import { productData, toBlend, toConfig, toGreen, toPack, toProduct } from "../lib/mappers";
 import type { Blend, Config, GreenBean, Pack, Product } from "../engine/types";
 
@@ -110,6 +110,52 @@ export async function setActive(kind: MasterKind, id: string, active: boolean) {
     case "blends": return toBlend(await prisma.blend.update({ ...where, include: { recipe: true } }));
     case "packs": return toPack(await prisma.pack.update(where));
     case "products": return toProduct(await prisma.product.update(where));
+  }
+}
+
+// Di mana saja item master dipakai. Ledger dibaca utuh (jumlahnya kecil) karena
+// referensinya ada di dalam kolom JSON `data` dengan nama field berbeda per jenis.
+async function usage(kind: MasterKind, id: string) {
+  const rows = await prisma.ledgerEntry.findMany({ where: { deleted: false }, select: { type: true, data: true } });
+  const targets: Record<MasterKind, string[]> = { greens: ["green", "roasted"], blends: ["blend"], packs: ["pack"], products: [] };
+  let ledger = 0;
+  for (const r of rows) {
+    const d = (r.data || {}) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+    const items: Record<string, any>[] = Array.isArray(d.items) ? d.items : []; // eslint-disable-line @typescript-eslint/no-explicit-any
+    const parts: Record<string, any>[] = Array.isArray(d.parts) ? d.parts : []; // eslint-disable-line @typescript-eslint/no-explicit-any
+    const hit =
+      (targets[kind].includes(d.target) && d.itemId === id) ||
+      (kind === "greens" && (d.greenId === id || parts.some((p) => p.greenId === id) || items.some((i) => i.kind === "roasted" && i.beanId === id))) ||
+      (kind === "blends" && (d.blendId === id || items.some((i) => i.kind === "blend" && i.beanId === id))) ||
+      (kind === "packs" && (d.packId === id || items.some((i) => i.packId === id))) ||
+      (kind === "products" && items.some((i) => i.productId === id));
+    if (hit) ledger++;
+  }
+  const [recipes, products] = await Promise.all([
+    kind === "greens" ? prisma.blendRecipeItem.count({ where: { greenId: id } }) : 0,
+    kind === "greens" ? prisma.product.count({ where: { greenId: id } })
+      : kind === "blends" ? prisma.product.count({ where: { blendId: id } })
+      : kind === "packs" ? prisma.product.count({ where: { packId: id } }) : 0,
+  ]);
+  return { ledger, recipes, products };
+}
+
+// Hapus permanen hanya untuk item yang belum pernah dipakai (mis. salah input).
+// Yang sudah punya riwayat harus diarsipkan supaya stok & laporan lama tetap benar.
+export async function removeMaster(kind: MasterKind, id: string) {
+  if (!(await exists(kind, id))) throw notFound("Data tidak ditemukan.");
+  const u = await usage(kind, id);
+  const why = [
+    u.ledger && `${u.ledger} transaksi`,
+    u.recipes && `${u.recipes} resep blend`,
+    u.products && `${u.products} produk di daftar harga`,
+  ].filter(Boolean);
+  if (why.length) throw conflict(`Tidak bisa dihapus karena masih dipakai di ${why.join(", ")}. Arsipkan saja.`);
+  switch (kind) {
+    case "greens": await prisma.greenBean.delete({ where: { id } }); break;
+    case "blends": await prisma.blend.delete({ where: { id } }); break; // resep ikut terhapus (onDelete: Cascade)
+    case "packs": await prisma.pack.delete({ where: { id } }); break;
+    case "products": await prisma.product.delete({ where: { id } }); break;
   }
 }
 
