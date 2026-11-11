@@ -50,8 +50,24 @@ Halaman yang sudah dipindah ke React: Ringkasan, Stok (tabel), Kas & Pembelian, 
 Produksi, Penjualan, Data Master, dan form stok opname masih memakai versi lama di `src/`.
 API-nya sudah tersedia, tinggal form-nya.
 
-**Belum ada login.** Nama pencatat hanya dikirim lewat header. Jangan buka API ke internet
-sebelum autentikasi dipasang.
+### Login (PIN 4 angka, seperti parang-ops)
+
+Aplikasi dibuka dengan PIN 4 angka tanpa memilih nama (`POST /api/auth/verify-pin`). Server
+membalas token sesi (12 jam) yang dikirim otomatis di setiap request `/api`
+(`frontend/src/api/authInterceptor.ts`). Layar terkunci lagi setelah 5 menit diam atau lewat tombol
+**Kunci**. Setelah 5 PIN salah, alamat itu dikunci 15 menit. PIN disimpan sebagai hash dan harus
+unik antar akun.
+
+Akun pertama dibuat dari terminal (setelah `npx prisma migrate deploy`):
+
+```
+cd backend
+npm run user -- create "Nama Admin" 1234 admin
+npm run user -- list
+npm run user -- reset-pin "Nama" 5678
+```
+
+Admin juga bisa mengelola akun lewat API `/api/users` (belum ada halaman UI-nya).
 
 ## Isi folder
 

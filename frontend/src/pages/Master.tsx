@@ -3,7 +3,7 @@
 // hapus permanen hanya untuk item yang belum pernah dipakai (server yang memeriksa).
 
 import { useRef, useState, type FormEvent, type ReactNode } from "react";
-import { masterApi } from "../api";
+import { deleteMasterItem, saveConfig, saveMasterItem, setMasterItemActive } from "../api/master";
 import { useToast } from "../components/Toast";
 import { DeleteButton, ItemSelect, Loading, MoneyInput, Panel, Pill, Segmented } from "../components/ui";
 import { useAppData } from "../context/AppData";
@@ -104,7 +104,7 @@ function MasterForm({ sub, item, onDone }: { sub: Exclude<Sub, "set">; item?: It
     if (!String(body.name || "").trim()) return toast("Isi nama dulu.", true);
     setBusy(true);
     try {
-      await masterApi.save(KIND[sub], item?.id || null, body);
+      await saveMasterItem(KIND[sub], item?.id || null, body);
       toast(item ? "Perubahan tersimpan." : "Ditambahkan.");
       changed();
       onDone();
@@ -230,7 +230,7 @@ function MasterList({ sub, list, q, editId, onEdit, onCancelEdit }: {
 
   const toggle = async (x: Item) => {
     try {
-      await masterApi.setActive(KIND[sub], x.id, x.active === false);
+      await setMasterItemActive(KIND[sub], x.id, x.active === false);
       toast(x.active === false ? "Diaktifkan lagi." : "Diarsipkan. Riwayatnya tetap tersimpan.");
       changed();
     } catch (e) {
@@ -240,7 +240,7 @@ function MasterList({ sub, list, q, editId, onEdit, onCancelEdit }: {
 
   const remove = async (x: Item) => {
     try {
-      await masterApi.remove(KIND[sub], x.id);
+      await deleteMasterItem(KIND[sub], x.id);
       toast(`${x.name} dihapus.`);
       if (editId === x.id) onCancelEdit();
       changed();
@@ -288,7 +288,7 @@ function SettingsForm({ config, catsOut }: { config: Config; catsOut: string[] }
     ev.preventDefault();
     setBusy(true);
     try {
-      await masterApi.saveConfig({
+      await saveConfig({
         ...c, bizName: c.bizName.trim() || "Roastery",
         shares: shares.map((s) => ({ label: s.label.trim(), pct: num(s.pct) })).filter((s) => s.label),
         routine: routine.map((r) => ({ label: r.label, amount: parseMoney(r.amount) })).filter((r) => r.amount > 0),

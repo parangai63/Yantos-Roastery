@@ -1,7 +1,8 @@
 // Port VIEWS.keuangan: buku kas masuk/keluar, beli green bean, beli kemasan.
 
 import { useState, type FormEvent } from "react";
-import { ledgerApi, reportApi } from "../api";
+import { createLedgerEntry, deleteLedgerEntry, fetchLedgerEntries } from "../api/ledger";
+import { fetchCashbook } from "../api/reports";
 import EntryFeed from "../components/EntryFeed";
 import { useToast } from "../components/Toast";
 import { DeleteButton, ItemSelect, Loading, MoneyInput, Panel, Segmented } from "../components/ui";
@@ -67,7 +68,7 @@ function EntryForm({ sub }: { sub: Sub }) {
     }
     setBusy(true);
     try {
-      await ledgerApi.create(body);
+      await createLedgerEntry(body);
       toast("Tersimpan.");
       setQty(""); setTotal(0); setNote(""); setDesc("");
       changed();
@@ -140,9 +141,9 @@ function EntryForm({ sub }: { sub: Sub }) {
 function Cashbook() {
   const { month, changed } = useAppData();
   const toast = useToast();
-  const { data: r, error } = useLoad(() => reportApi.cashbook(month), [month]);
+  const { data: r, error } = useLoad(() => fetchCashbook(month), [month]);
   const del = async (id: string) => {
-    try { await ledgerApi.remove(id); toast("Transaksi dihapus."); changed(); } catch (e) { toast((e as Error).message, true); }
+    try { await deleteLedgerEntry(id); toast("Transaksi dihapus."); changed(); } catch (e) { toast((e as Error).message, true); }
   };
   return (
     <Panel title={"Buku kas " + mLabel(month)} hint={r ? `Saldo awal ${rps(r.start)} · akhir ${rps(r.end)}` : ""}>
@@ -175,7 +176,7 @@ function Cashbook() {
 function Purchases({ sub }: { sub: "green" | "pack" }) {
   const { month } = useAppData();
   const type = sub === "green" ? "green_in" : "pack_in";
-  const { data, error } = useLoad(() => ledgerApi.list({ month, types: [type] }), [month, type]);
+  const { data, error } = useLoad(() => fetchLedgerEntries({ month, types: [type] }), [month, type]);
   const total = (data || []).reduce((a, e) => a + (Number(e.total) || 0), 0);
   return (
     <Panel title={(sub === "green" ? "Pembelian green bean " : "Pembelian kemasan ") + mLabel(month)} hint={data ? "Total " + rp(total) : ""}>

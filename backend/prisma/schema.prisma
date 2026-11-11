@@ -143,3 +143,37 @@ model LedgerEntry {
   @@index([type, date])
   @@map("ledger_entries")
 }
+
+// ---------------------------------------------------------------------------
+// Akun & sesi login (PIN 4 angka, tanpa memilih nama — seperti parang-ops)
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  admin // bisa mendaftarkan & mengelola akun lain
+  staff
+}
+
+model User {
+  id        String   @id
+  name      String   @unique // ditampilkan setelah masuk dan mengisi LedgerEntry.by
+  pinHash   String // scrypt$<salt>$<hash>, lihat src/lib/pin.ts. PIN unik antar akun (dicek di authService)
+  role      UserRole @default(staff)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  sessions Session[]
+
+  @@map("users")
+}
+
+// id = sha256 dari token yang dipegang browser, jadi token asli tidak tersimpan di DB.
+model Session {
+  id        String   @id
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([userId])
+  @@map("sessions")
+}

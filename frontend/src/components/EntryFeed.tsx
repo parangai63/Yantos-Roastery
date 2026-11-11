@@ -1,6 +1,6 @@
 // Daftar entri ledger dengan aksi "Tandai lunas" dan "Hapus" (port feed() lama).
 
-import { ledgerApi } from "../api";
+import { deleteLedgerEntry, markLedgerEntryPaid } from "../api/ledger";
 import { useAppData } from "../context/AppData";
 import type { LedgerEntry } from "../types";
 import { dLabel, rp } from "../utils/format";
@@ -40,9 +40,9 @@ export default function EntryFeed({ entries, empty, limit }: { entries: LedgerEn
               {d.amt != null && <span className={`amt ${d.amt > 0 ? "in" : ""}`}>{d.amt > 0 ? "+" : "−"}{rp(Math.abs(d.amt))}</span>}
               <div className="actions">
                 {canPay && (
-                  <button type="button" className="btn btn-sm btn-ghost" onClick={() => act(() => ledgerApi.markPaid(e.id), "Ditandai lunas hari ini dan masuk buku kas.")}>Tandai lunas</button>
+                  <button type="button" className="btn btn-sm btn-ghost" onClick={() => act(() => markLedgerEntryPaid(e.id), "Ditandai lunas hari ini dan masuk buku kas.")}>Tandai lunas</button>
                 )}
-                <DeleteButton onConfirm={() => act(() => ledgerApi.remove(e.id), "Transaksi dihapus.")} />
+                <DeleteButton onConfirm={() => act(() => deleteLedgerEntry(e.id), "Transaksi dihapus.")} />
               </div>
             </div>
           </div>

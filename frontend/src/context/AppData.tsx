@@ -3,7 +3,9 @@
 // `version` dinaikkan setelah setiap simpan supaya halaman memuat ulang laporan.
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { ledgerApi, masterApi, reportApi } from "../api";
+import { fetchLedgerNames } from "../api/ledger";
+import { fetchConfig, fetchMaster, fetchMeta } from "../api/master";
+import { fetchCosts } from "../api/reports";
 import type { Config, Costs, MasterData, Meta, Names, Product, StockKind } from "../types";
 import { thisMonth } from "../utils/format";
 
@@ -37,7 +39,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [version, setVersion] = useState(0);
 
   useEffect(() => {
-    Promise.all([masterApi.list(), masterApi.meta(), masterApi.config(), reportApi.costs(), ledgerApi.names()])
+    Promise.all([fetchMaster(), fetchMeta(), fetchConfig(), fetchCosts(), fetchLedgerNames()])
       .then(([m, v, c, k, n]) => { setMaster(m); setMeta(v); setConfig(c); setCosts(k); setNames(n); setError(null); })
       .catch((e: Error) => setError(e.message));
   }, [version]);

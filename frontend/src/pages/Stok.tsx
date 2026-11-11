@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
-import { ledgerApi, reportApi } from "../api";
+import { createLedgerEntry } from "../api/ledger";
+import { fetchStockReport } from "../api/reports";
 import { useToast } from "../components/Toast";
 import { ItemSelect, Loading, Panel, Segmented, StockStatus } from "../components/ui";
 import { useAppData } from "../context/AppData";
@@ -15,7 +16,7 @@ export default function Stok() {
   const [kind, setKind] = useState<StockKind>("green");
   const [filter, setFilter] = useState<Filter>("all");
   const [q, setQ] = useState("");
-  const { data, error } = useLoad(() => reportApi.stock(kind), [kind]);
+  const { data, error } = useLoad(() => fetchStockReport(kind), [kind]);
   const unit = T_UNIT[kind];
 
   // Seperti app lama: hanya item aktif yang ditampilkan.
@@ -107,7 +108,7 @@ function Opname({ kind }: { kind: StockKind }) {
     if (Math.abs(d) < 1e-9) return toast("Stok fisik sama dengan sistem.");
     setBusy(true);
     try {
-      await ledgerApi.create({ type: "adjust", date, target: kind, itemId: item, delta: Math.round(d * 1000) / 1000, note });
+      await createLedgerEntry({ type: "adjust", date, target: kind, itemId: item, delta: Math.round(d * 1000) / 1000, note });
       toast("Stok disesuaikan.");
       setActual(""); setNote("");
       changed();

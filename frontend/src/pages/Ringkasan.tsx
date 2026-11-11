@@ -1,4 +1,5 @@
-import { ledgerApi, reportApi } from "../api";
+import { fetchLedgerEntries } from "../api/ledger";
+import { fetchSummary } from "../api/reports";
 import CashChart from "../components/CashChart";
 import EntryFeed from "../components/EntryFeed";
 import { Kpi, Loading, Panel, Pill } from "../components/ui";
@@ -9,8 +10,8 @@ import { T_LABEL, T_UNIT } from "../utils/ledger";
 
 export default function Ringkasan() {
   const { month } = useAppData();
-  const { data: s, error } = useLoad(() => reportApi.summary(month), [month]);
-  const { data: recent } = useLoad(() => ledgerApi.list({ limit: 10, order: "recent" }), []);
+  const { data: s, error } = useLoad(() => fetchSummary(month), [month]);
+  const { data: recent } = useLoad(() => fetchLedgerEntries({ limit: 10, order: "recent" }), []);
 
   if (!s) return <Loading error={error} />;
   const k = s.kpi;

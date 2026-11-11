@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAppData } from "../context/AppData";
+import { useAuth } from "../context/AuthContext";
 
 export const TABS: [string, string, boolean][] = [
   // [path, label, pakai pemilih periode] — sama dengan TABS & VIEWS.*.period di app lama
@@ -12,7 +13,7 @@ export const TABS: [string, string, boolean][] = [
   ["/master", "Data Master", false],
 ];
 
-function Logo() {
+export function Logo() {
   return (
     <svg width="38" height="38" viewBox="0 0 38 38" aria-hidden="true" className="flex-none">
       <rect width="38" height="38" rx="10" fill="var(--roast-soft)" />
@@ -24,6 +25,7 @@ function Logo() {
 
 export default function Layout() {
   const { month, setMonth, error, master, config } = useAppData();
+  const { user, lock } = useAuth();
   const { pathname } = useLocation();
   const tab = TABS.find(([p]) => p === pathname) || TABS[0];
   const status = error ? ["off", "Server tidak terhubung"] : master ? ["on", "Tersambung ke server"] : ["", "Menghubungkan…"];
@@ -39,7 +41,15 @@ export default function Layout() {
               <p>Gudang, produksi &amp; keuangan</p>
             </div>
           </div>
-          <div className={`status ${status[0]}`}><span className="dot" /><span>{status[1]}</span></div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className={`status ${status[0]}`}><span className="dot" /><span>{status[1]}</span></div>
+            {user && (
+              <>
+                <span className="status" title={user.role === "admin" ? "Admin" : "Staf"}>{user.name}</span>
+                <button type="button" className="btn btn-sm btn-ghost" onClick={lock}>Kunci</button>
+              </>
+            )}
+          </div>
         </header>
         <nav className="tabs" aria-label="Menu">
           {TABS.map(([path, label]) => (

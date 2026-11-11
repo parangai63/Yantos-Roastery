@@ -94,7 +94,7 @@ backend/
   src/engine/            compute.ts (port compute() lama), types.ts, vocab.ts, compute.test.ts
   src/services/          stateService (muat DB → engine), ledgerService (validasi & tulis),
                          masterService, reportService (laporan siap tampil)
-  src/controllers/, src/routes/   tipis; /api/master, /api/config, /api/meta, /api/ledger, /api/reports/*
+  src/controllers/, src/routes/   tipis; satu router per resource (lihat poin login di bawah)
 frontend/src/
   api/, types/, utils/   format.ts (rp, nf, dLabel…), ledger.ts (describe() lama)
   context/AppData.tsx    master + periode; panggil changed() setelah simpan agar laporan dimuat ulang
@@ -109,7 +109,15 @@ frontend/src/
   (kelas CSS di `frontend/src/index.css` disalin dari sana). Stok & biaya per item untuk hitungan
   langsung di form diambil dari `GET /api/reports/costs` lewat `useAppData().qty/cost/productCost`.
 - Supabase: `DATABASE_URL` lewat pooler 6543 (`?pgbouncer=true`), `DIRECT_URL` lewat 5432 untuk migrate.
-- Belum ada autentikasi (header `X-Actor` hanya mengisi `by`).
+- Login PIN 4 angka tanpa pilih nama (pola parang-ops), tapi dicek server: `services/authService.ts`,
+  `middleware/auth.ts` (Bearer token → `req.user`, `req.actor` mengisi `by`), `lib/pin.ts` (scrypt).
+  Terbuka hanya `GET /api/auth/status` dan `POST /api/auth/verify-pin`; sisanya wajib token.
+  Route per resource seperti parang-ops: `/api/auth`, `/api/users` (admin), `/api/master` (+ `/meta`),
+  `/api/config`, `/api/ledger`, `/api/reports/*`. Error selalu `{ message }`.
+- Frontend: satu file per modul di `api/` (`auth`, `users`, `master`, `ledger`, `reports`) berisi fungsi
+  bernama (`fetchX`, `createX`, …) dengan `handleResponse` dari `api/config.ts`. Token ditempel oleh
+  `api/authInterceptor.ts` (dipasang di `main.tsx`); `context/AuthContext.tsx` + `components/PinGate.tsx`.
+- Test alur login: `backend/src/routes/auth.test.ts` (Prisma tiruan, tanpa DB).
 - Setelah mengubah engine: `cd backend && npm test`. Test memakai data/ langsung, tanpa DB.
 
 ## Angka patokan (harus tetap sama setelah refactor)

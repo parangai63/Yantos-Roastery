@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { reportApi } from "../api";
+import { fetchBills, fetchCashbook, fetchHppReport, fetchMonthlyReport, fetchYearlyReport } from "../api/reports";
 import EntryFeed from "../components/EntryFeed";
 import { useToast } from "../components/Toast";
 import { Line, Loading, Panel, Segmented } from "../components/ui";
@@ -17,7 +17,7 @@ export default function Laporan() {
   // Unduh buku kas bulan terpilih sebagai CSV (BOM supaya Excel membaca UTF-8).
   async function exportCsv() {
     try {
-      const { lines } = await reportApi.cashbook(month);
+      const { lines } = await fetchCashbook(month);
       const rows: (string | number)[][] = [["Tanggal", "Keterangan", "Kategori", "Masuk (Rp)", "Keluar (Rp)", "Saldo (Rp)"]];
       lines.forEach((c) => rows.push([c.date, c.desc, c.cat, c.dir === "in" ? Math.round(c.amt) : "", c.dir === "out" ? Math.round(c.amt) : "", Math.round(c.bal)]));
       const csv = "﻿" + rows.map((r) => r.map((v) => { const s = String(v); return /[",;\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }).join(",")).join("\n");
@@ -47,7 +47,7 @@ export default function Laporan() {
 
 function Bulanan() {
   const { month } = useAppData();
-  const { data: r, error } = useLoad(() => reportApi.monthly(month), [month]);
+  const { data: r, error } = useLoad(() => fetchMonthlyReport(month), [month]);
   if (!r) return <Loading error={error} />;
   const c = r.config;
   return (
@@ -77,7 +77,7 @@ function Bulanan() {
 function Tahunan() {
   const { month } = useAppData();
   const year = month.slice(0, 4);
-  const { data: r, error } = useLoad(() => reportApi.yearly(year), [year]);
+  const { data: r, error } = useLoad(() => fetchYearlyReport(year), [year]);
   if (!r) return <Loading error={error} />;
   const rows = r.rows;
   const sum = (f: (x: (typeof rows)[number]) => number) => rows.reduce((a, x) => a + f(x), 0);
@@ -122,7 +122,7 @@ function Tahunan() {
 
 function Hpp() {
   const { month, master, meta } = useAppData();
-  const { data: r, error } = useLoad(() => reportApi.hpp(month), [month]);
+  const { data: r, error } = useLoad(() => fetchHppReport(month), [month]);
   if (!r || !master || !meta) return <Loading error={error} />;
   const net = r.sales - r.disc;
   const packName = (id: string) => master.packs.find((p) => p.id === id)?.name || "";
@@ -175,7 +175,7 @@ function Hpp() {
 }
 
 function Tagihan() {
-  const { data: r, error } = useLoad(() => reportApi.bills(), []);
+  const { data: r, error } = useLoad(() => fetchBills(), []);
   if (!r) return <Loading error={error} />;
   const tot = (l: typeof r.recv) => rp(l.reduce((a, e) => a + (Number(e.total) || 0), 0));
   return (

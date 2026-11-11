@@ -163,3 +163,18 @@ h1, h2, h3 { @apply font-display; letter-spacing: -0.01em; text-wrap: balance; }
   .pos { color: var(--ok); }
   .neg { color: var(--bad); }
 }
+
+/* Gerbang PIN (components/PinGate.tsx) */
+@layer components {
+  .pin-box { width: 58px; height: 72px; text-align: center; font-size: 1.6rem; font-weight: 700; color: var(--ink); background: var(--surface-strong); border: 2px solid var(--line); border-radius: 12px; outline: none; transition: border-color .15s, box-shadow .15s; }
+  .pin-box:focus { border-color: var(--accent-2); box-shadow: 0 0 0 4px var(--accent-soft); }
+  .pin-box:disabled { opacity: .6; }
+  .pin-box-error { border-color: var(--bad); color: var(--bad); }
+  .pin-shake { animation: pin-shake .4s; }
+}
+@keyframes pin-shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-8px); }
+  40%, 80% { transform: translateX(8px); }
+}
+@media (prefers-reduced-motion: reduce) { .pin-shake { animation: none; } }

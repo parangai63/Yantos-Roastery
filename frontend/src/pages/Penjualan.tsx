@@ -2,7 +2,8 @@
 // kemasan terpotong otomatis oleh engine di server.
 
 import { useState, type FormEvent } from "react";
-import { ledgerApi, reportApi } from "../api";
+import { createLedgerEntry, fetchLedgerEntries } from "../api/ledger";
+import { fetchBills, fetchMonthlyReport } from "../api/reports";
 import EntryFeed from "../components/EntryFeed";
 import { useToast } from "../components/Toast";
 import { Loading, MoneyInput, Panel, Segmented } from "../components/ui";
@@ -86,7 +87,7 @@ function SaleForm() {
     if (!items.length) return toast("Tambahkan minimal satu produk.", true);
     setBusy(true);
     try {
-      await ledgerApi.create({
+      await createLedgerEntry({
         type: "sale", date, customer, channel: channel || meta!.channels[0], method: method || meta!.methods[0],
         items, discount, shipping, paid, due: paid ? undefined : due || undefined, note,
       });
@@ -160,8 +161,8 @@ function SaleForm() {
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function MonthList() {
   const { month } = useAppData();
-  const { data: sales, error } = useLoad(() => ledgerApi.list({ month, types: ["sale"] }), [month]);
-  const { data: rep } = useLoad(() => reportApi.monthly(month), [month]);
+  const { data: sales, error } = useLoad(() => fetchLedgerEntries({ month, types: ["sale"] }), [month]);
+  const { data: rep } = useLoad(() => fetchMonthlyReport(month), [month]);
   if (!sales) return <Loading error={error} />;
   // Ringkasan nota bulan ini (x.orders, x.kgSold, x.sales − x.disc + x.ship di app lama).
   const kg = sales.reduce((a, e: any) => a + (e.items || []).reduce((b: number, i: any) => b + ((+i.grams || 0) * (+i.qty || 0)) / 1000, 0), 0);
@@ -176,7 +177,7 @@ function MonthList() {
 }
 
 function UnpaidList() {
-  const { data, error } = useLoad(() => reportApi.bills(), []);
+  const { data, error } = useLoad(() => fetchBills(), []);
   if (!data) return <Loading error={error} />;
   const list: LedgerEntry[] = data.recv.slice().sort((a, b) => a.date.localeCompare(b.date));
   return (

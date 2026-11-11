@@ -2,7 +2,8 @@
 // dan stok keluar selain penjualan bernota.
 
 import { useState, type FormEvent, type ReactNode } from "react";
-import { ledgerApi, reportApi } from "../api";
+import { createLedgerEntry, fetchLedgerEntries } from "../api/ledger";
+import { fetchProductionReport } from "../api/reports";
 import EntryFeed from "../components/EntryFeed";
 import { useToast } from "../components/Toast";
 import { ItemSelect, Loading, Panel, Segmented } from "../components/ui";
@@ -40,7 +41,7 @@ function useSave() {
   const save = async (body: Record<string, unknown>, ok: string) => {
     setBusy(true);
     try {
-      await ledgerApi.create(body);
+      await createLedgerEntry(body);
       toast(ok);
       changed();
       return true;
@@ -259,7 +260,7 @@ function UsageForm() {
 
 function Stats() {
   const { month } = useAppData();
-  const { data: x, error } = useLoad(() => reportApi.production(month), [month]);
+  const { data: x, error } = useLoad(() => fetchProductionReport(month), [month]);
   return (
     <Panel title={`Ringkasan ${mLabel(month)}`}>
       {!x ? <Loading error={error} /> : (
@@ -287,7 +288,7 @@ function Stats() {
 
 function Log() {
   const { month } = useAppData();
-  const { data, error } = useLoad(() => ledgerApi.list({ month, types: ["roast", "blend", "usage", "adjust"] }), [month]);
+  const { data, error } = useLoad(() => fetchLedgerEntries({ month, types: ["roast", "blend", "usage", "adjust"] }), [month]);
   return (
     <Panel title="Log produksi & stok keluar">
       {data ? <EntryFeed entries={data} empty={`Belum ada catatan di ${mLabel(month)}.`} /> : <Loading error={error} />}
