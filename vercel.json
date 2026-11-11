@@ -1,7 +1,7 @@
 {
   "framework": null,
-  "installCommand": "npm ci --prefix backend && npm ci --prefix frontend",
-  "buildCommand": "npm run build --prefix backend && npm run build --prefix frontend",
+  "installCommand": "cd backend && npm ci && cd ../frontend && npm ci",
+  "buildCommand": "cd backend && npm run build && cd ../frontend && npm run build",
   "outputDirectory": "frontend/dist",
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api" },
