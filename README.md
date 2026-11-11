@@ -69,6 +69,18 @@ npm run user -- reset-pin "Nama" 5678
 
 Admin juga bisa mengelola akun lewat API `/api/users` (belum ada halaman UI-nya).
 
+## Deploy ke Vercel
+
+Satu project Vercel dari root repo: frontend jadi file statis (`frontend/dist`), backend Express
+jalan sebagai Serverless Function `api/index.js` (memuat `backend/dist/app.js`). Semua diatur
+`vercel.json`. Frontend dan API satu domain, jadi `VITE_API_URL` dibiarkan kosong.
+
+1. Settings → General → **Root Directory kosong** (root repo), Framework Preset: Other.
+2. Settings → Environment Variables: `DATABASE_URL` (pooler 6543, `?pgbouncer=true&connection_limit=1`),
+   `DIRECT_URL` (5432), `TRUST_PROXY=1`.
+3. Migrasi & akun dijalankan dari komputer sendiri: `cd backend && npm run db:deploy`,
+   lalu `npm run user -- create "Nama" 1234 admin`.
+
 ## Isi folder
 
 | Folder | Isi |
