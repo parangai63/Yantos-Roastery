@@ -174,8 +174,26 @@ model Session {
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
-  expiresAt DateTime
+  expiresAt DateTime // batas mutlak (12 jam sejak masuk)
+  // Request terakhir. Sesi ditolak bila diam lebih dari IDLE_MINUTES (authService.ts).
+  // Diperbarui paling sering tiap 30 detik supaya tidak menambah tulis di setiap request.
+  lastSeenAt DateTime @default(now())
 
   @@index([userId])
   @@map("sessions")
+}
+
+// ---------------------------------------------------------------------------
+// Penanda versi data untuk cache hitungan di stateService.ts
+// ---------------------------------------------------------------------------
+
+// Satu baris (id = 1). `rev` dinaikkan oleh trigger Postgres setiap ada INSERT/UPDATE/DELETE
+// di tabel master, config, atau ledger (migrasi 20261117000000_session_idle_data_rev).
+// Server cukup membaca angka ini untuk tahu apakah hasil compute() di memori masih berlaku.
+// Jangan diubah manual; trigger yang mengurusnya.
+model DataRev {
+  id  Int    @id @default(1)
+  rev BigInt @default(0)
+
+  @@map("data_rev")
 }

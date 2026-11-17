@@ -19,7 +19,7 @@ export async function fetchMe(): Promise<UnlockedUser> {
   return handleResponse(res);
 }
 
-/** Token dikirim eksplisit karena dipanggil tepat saat sesi dihapus dari sessionStorage. */
+/** Token dikirim eksplisit karena dipanggil tepat saat sesi dihapus dari localStorage. */
 export async function logout(token: string): Promise<void> {
   const res = await fetch(`${BASE_URL}/logout`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
   return handleResponse(res);

@@ -8,7 +8,13 @@ import prisma from "../prismaClient";
 import { HttpError, badRequest, conflict, notFound } from "../lib/httpError";
 import { assertPin, hashPin, verifyPin as checkPin, PIN_PATTERN } from "../lib/pin";
 
-const SESSION_HOURS = 12;
+const SESSION_HOURS = 12; // batas mutlak sejak masuk
+// Browser mengunci setelah 10 menit diam (frontend AuthContext). Server memberi kelonggaran
+// 2 menit karena lastSeenAt hanya diperbarui berkala (TOUCH_MS) dan lewat ping dari browser.
+export const IDLE_MINUTES = 12;
+const IDLE_MS = IDLE_MINUTES * 60_000;
+const TOUCH_MS = 30_000; // lastSeenAt ditulis paling sering sekali per 30 detik per sesi
+const CACHE_MS = 30_000; // sesi dibaca ulang dari DB paling lambat tiap 30 detik
 const MAX_FAILED = 5;
 const LOCK_MINUTES = 15;
 const ROLES: UserRole[] = ["admin", "staff"];
@@ -72,22 +78,69 @@ export async function verifyPin(pin: unknown, client: string) {
   await prisma.$transaction([
     prisma.session.deleteMany({ where: { expiresAt: { lt: now } } }),
     prisma.session.create({
-      data: { id: sessionId(token), userId: user.id, expiresAt: new Date(now.getTime() + SESSION_HOURS * 3600_000) },
+      data: { id: sessionId(token), userId: user.id, expiresAt: new Date(now.getTime() + SESSION_HOURS * 3600_000), lastSeenAt: now },
     }),
   ]);
   return { token, user: toPublicUser(user) };
 }
 
-/** Dipakai requireAuth. Akun nonaktif atau sesi kedaluwarsa = tidak login. */
+// ---------- cache sesi ----------
+// Setiap request /api memeriksa sesi. Supaya tidak selalu query ke DB, hasilnya disimpan di
+// memori proses paling lama CACHE_MS. Logout / ubah akun di proses ini langsung menghapus
+// cache; proses server lain (serverless) paling lambat ikut tahu setelah CACHE_MS.
+type CachedSession = { user: User; expiresAt: number; lastSeenAt: number; cachedAt: number };
+const sessionCache = new Map<string, CachedSession>();
+
+async function readSession(id: string): Promise<CachedSession | null> {
+  const s = await prisma.session.findUnique({ where: { id }, include: { user: true } });
+  if (!s) {
+    sessionCache.delete(id);
+    return null;
+  }
+  const c = { user: s.user, expiresAt: s.expiresAt.getTime(), lastSeenAt: s.lastSeenAt.getTime(), cachedAt: Date.now() };
+  if (sessionCache.size > 1000) sessionCache.clear();
+  sessionCache.set(id, c);
+  return c;
+}
+
+const isDead = (c: CachedSession, now: number) => c.expiresAt < now || now - c.lastSeenAt > IDLE_MS || !c.user.active;
+
+/**
+ * Dipakai requireAuth. Tidak login bila: sesi tidak ada, lewat 12 jam, diam lebih dari
+ * IDLE_MINUTES, atau akun nonaktif. Sesi yang mati langsung dihapus dari DB.
+ */
 export async function userFromToken(token: string): Promise<User | null> {
   if (!token) return null;
-  const s = await prisma.session.findUnique({ where: { id: sessionId(token) }, include: { user: true } });
-  if (!s || s.expiresAt < new Date() || !s.user.active) return null;
-  return s.user;
+  const id = sessionId(token);
+  const now = Date.now();
+
+  let c = sessionCache.get(id);
+  const fromCache = !!c && now - c.cachedAt <= CACHE_MS;
+  if (!fromCache) c = (await readSession(id)) ?? undefined;
+  // Cache bisa ketinggalan lastSeenAt yang diperbarui proses lain; pastikan ke DB sebelum menolak.
+  if (c && fromCache && isDead(c, now)) c = (await readSession(id)) ?? undefined;
+  if (!c) return null;
+
+  if (isDead(c, now)) {
+    sessionCache.delete(id);
+    await prisma.session.deleteMany({ where: { id } });
+    return null;
+  }
+  if (now - c.lastSeenAt > TOUCH_MS) {
+    c.lastSeenAt = now;
+    await prisma.session.updateMany({ where: { id }, data: { lastSeenAt: new Date(now) } });
+  }
+  return c.user;
+}
+
+function forgetUserSessions(userId: string) {
+  for (const [id, c] of sessionCache) if (c.user.id === userId) sessionCache.delete(id);
 }
 
 export async function logout(token: string) {
-  await prisma.session.deleteMany({ where: { id: sessionId(token) } });
+  const id = sessionId(token);
+  sessionCache.delete(id);
+  await prisma.session.deleteMany({ where: { id } });
 }
 
 export async function changeOwnPin(userId: string, oldPin: unknown, newPin: unknown) {
@@ -143,6 +196,8 @@ export async function updateUser(actorId: string, id: string, body: { active?: u
   }
 
   const u = await prisma.user.update({ where: { id }, data });
+  // Peran/aktif berubah: cache sesi akun ini dibuang supaya request berikutnya membaca ulang.
+  forgetUserSessions(id);
   // Nonaktif atau PIN diganti: keluarkan dari semua perangkat.
   if (data.active === false || data.pinHash) await prisma.session.deleteMany({ where: { userId: id } });
   return toPublicUser(u);

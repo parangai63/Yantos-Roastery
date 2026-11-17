@@ -2,10 +2,8 @@
 // biaya saat ini, nama pelanggan/supplier, periode terpilih.
 // `version` dinaikkan setelah setiap simpan supaya halaman memuat ulang laporan.
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { fetchLedgerNames } from "../api/ledger";
-import { fetchConfig, fetchMaster, fetchMeta } from "../api/master";
-import { fetchCosts } from "../api/reports";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { fetchBootstrap } from "../api/master";
 import type { Config, Costs, MasterData, Meta, Names, Product, StockKind } from "../types";
 import { thisMonth } from "../utils/format";
 
@@ -20,6 +18,8 @@ interface AppData {
   setMonth: (m: string) => void;
   version: number;
   changed: () => void;
+  /** Hasil useLoad terakhir per kunci, supaya pindah tab langsung menampilkan data lama sambil memuat ulang. */
+  responseCache: Map<string, unknown>;
   // Stok & biaya rata-rata per item, sama seperti stk()/costOf() di app lama.
   qty: (t: StockKind, id: string) => number;
   cost: (t: StockKind, id: string) => number;
@@ -37,11 +37,19 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [month, setMonth] = useState(thisMonth());
   const [version, setVersion] = useState(0);
+  // Dibuang bersama provider saat terkunci / ganti akun (App.tsx memberi key = user.id).
+  const responseCache = useRef(new Map<string, unknown>()).current;
 
   useEffect(() => {
-    Promise.all([fetchMaster(), fetchMeta(), fetchConfig(), fetchCosts(), fetchLedgerNames()])
-      .then(([m, v, c, k, n]) => { setMaster(m); setMeta(v); setConfig(c); setCosts(k); setNames(n); setError(null); })
-      .catch((e: Error) => setError(e.message));
+    let alive = true;
+    // Satu request (GET /api/bootstrap) menggantikan lima request terpisah.
+    fetchBootstrap()
+      .then((b) => {
+        if (!alive) return;
+        setMaster(b.master); setMeta(b.meta); setConfig(b.config); setCosts(b.costs); setNames(b.names); setError(null);
+      })
+      .catch((e: Error) => alive && setError(e.message));
+    return () => { alive = false; };
   }, [version]);
 
   const changed = useCallback(() => setVersion((v) => v + 1), []);
@@ -55,7 +63,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   }, [costs]);
 
   return (
-    <Ctx.Provider value={{ master, meta, config, costs, names, error, month, setMonth, version, changed, ...helpers }}>
+    <Ctx.Provider value={{ master, meta, config, costs, names, error, month, setMonth, version, changed, responseCache, ...helpers }}>
       {children}
     </Ctx.Provider>
   );

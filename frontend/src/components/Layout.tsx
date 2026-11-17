@@ -11,6 +11,7 @@ export const TABS: [string, string, boolean][] = [
   ["/keuangan", "Kas & Pembelian", true],
   ["/laporan", "Laporan", true],
   ["/master", "Data Master", false],
+  ["/akun", "Akun", false],
 ];
 
 export function Logo() {
@@ -45,7 +46,7 @@ export default function Layout() {
             <div className={`status ${status[0]}`}><span className="dot" /><span>{status[1]}</span></div>
             {user && (
               <>
-                <span className="status" title={user.role === "admin" ? "Admin" : "Staf"}>{user.name}</span>
+                <NavLink to="/akun" className="status" title={`${user.role === "admin" ? "Admin" : "Staf"} · kelola akun & PIN`}>{user.name}</NavLink>
                 <button type="button" className="btn btn-sm btn-ghost" onClick={lock}>Kunci</button>
               </>
             )}

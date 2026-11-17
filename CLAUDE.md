@@ -103,7 +103,13 @@ frontend/src/
 
 - `LedgerEntry`: kolom umum (`type`, `date` string YYYY-MM-DD, `at`, `by`, `deleted`) +
   `data` JSON berisi field per jenis. Engine membaca bentuk datar lewat `lib/mappers.ts`.
-- Stok, HPP, kas tetap **tidak disimpan**; `stateService.loadState()` menghitung ulang per request.
+- Stok, HPP, kas tetap **tidak disimpan**. `stateService.loadState()` menghitung ulang, dengan cache di memori
+  yang ditandai `data_rev.rev` (dinaikkan trigger Postgres di setiap tulis ke tabel master/config/ledger).
+  Hasil `loadState()` dipakai bersama antar request: jangan di-mutate. Tabel baru yang ikut dihitung
+  engine wajib diberi trigger `bump_data_rev` juga (lihat migrasi `20261117000000_session_idle_data_rev`).
+- `GET /api/bootstrap` memberi master, meta, config, costs, names sekaligus untuk `AppData`.
+  `useLoad` menyimpan hasil terakhir per (fungsi, deps) supaya pindah tab tidak kosong.
+- Header `Server-Timing` (`lib/timing.ts`) ada di setiap respons `/api`.
 - Penjualan: klien hanya kirim `productId`, `qty`, `price`; detail item diambil server dari daftar harga.
 - Semua tab lama sudah diport ke React. Acuan tampilan & perilaku: `original/yantos-roastery-artifact.html`
   (kelas CSS di `frontend/src/index.css` disalin dari sana). Stok & biaya per item untuk hitungan
@@ -112,6 +118,9 @@ frontend/src/
 - Login PIN 4 angka tanpa pilih nama (pola parang-ops), tapi dicek server: `services/authService.ts`,
   `middleware/auth.ts` (Bearer token → `req.user`, `req.actor` mengisi `by`), `lib/pin.ts` (scrypt).
   Terbuka hanya `GET /api/auth/status` dan `POST /api/auth/verify-pin`; sisanya wajib token.
+  Sesi di localStorage, terkunci setelah 10 menit diam (semua tab berbagi hitungan, `AuthContext`);
+  server menolak sesi diam >12 menit (`sessions.lastSeenAt`) dan meng-cache cek sesi 30 detik.
+  Halaman `pages/Akun.tsx`: ganti PIN sendiri; admin kelola akun.
   Route per resource seperti parang-ops: `/api/auth`, `/api/users` (admin), `/api/master` (+ `/meta`),
   `/api/config`, `/api/ledger`, `/api/reports/*`. Error selalu `{ message }`.
 - Frontend: satu file per modul di `api/` (`auth`, `users`, `master`, `ledger`, `reports`) berisi fungsi

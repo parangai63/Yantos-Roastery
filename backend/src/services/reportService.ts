@@ -5,7 +5,7 @@ import {
   alertsList, avgOf, cashUntil, distrib, labaOf, minOf, monthOf, productCost, yieldOf,
 } from "../engine/compute";
 import type { StockKind } from "../engine/types";
-import { loadState } from "./stateService";
+import { loadState, type State } from "./stateService";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 export const today = () => {
@@ -129,7 +129,10 @@ export async function cashbook(month: string) {
 
 // Biaya rata-rata saat ini per item, untuk estimasi di form (HPP penjualan, nilai stok keluar).
 export async function costs() {
-  const { master, C } = await loadState();
+  return costsOf(await loadState());
+}
+
+export function costsOf({ master, C }: Pick<State, "master" | "C">) {
   const out: Record<StockKind, Record<string, { qty: number; cost: number }>> = { green: {}, roasted: {}, blend: {}, pack: {} };
   (Object.keys(SRC) as StockKind[]).forEach((k) => {
     for (const id in master[SRC[k]]) out[k][id] = { qty: C.st[k][id]?.qty ?? 0, cost: C.cost(k, id) };

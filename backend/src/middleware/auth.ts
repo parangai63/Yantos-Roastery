@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import type { User } from "@prisma/client";
 import { HttpError } from "../lib/httpError";
 import { userFromToken } from "../services/authService";
+import { timed } from "../lib/timing";
 
 // Setiap request /api (kecuali /api/auth/status dan /api/auth/verify-pin) wajib membawa header
 //   Authorization: Bearer <token>
@@ -27,7 +28,7 @@ export const bearer = (req: Request) => {
 export async function requireAuth(req: Request, _res: Response, next: NextFunction) {
   try {
     const token = bearer(req);
-    const user = await userFromToken(token);
+    const user = await timed("auth", () => userFromToken(token));
     if (!user) throw new HttpError(401, "Sesi berakhir. Silakan masuk lagi.");
     req.user = user;
     req.token = token;

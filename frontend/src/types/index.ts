@@ -65,3 +65,6 @@ export interface Cashbook { month: string; start: number; cin: number; cout: num
 // Stok & biaya rata-rata saat ini per item (GET /reports/costs), untuk hitungan langsung di form.
 export type Costs = Record<StockKind, Record<string, { qty: number; cost: number }>>;
 export interface Names { customers: string[]; suppliers: string[] }
+
+/** GET /api/bootstrap: data awal AppData dalam satu request. */
+export interface Bootstrap { master: MasterData; meta: Meta; config: Config; costs: Costs; names: Names }

@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { badRequest } from "../lib/httpError";
 import * as master from "../services/masterService";
-import { CATS_IN, CATS_OUT, CHANNELS, GROUPS, METHODS, USE_CATS } from "../engine/vocab";
+import { META } from "../services/bootstrapService";
 
 const kindParam = (req: Request) => {
   const k = req.params.kind;
@@ -46,5 +46,5 @@ export async function saveConfig(req: Request, res: Response) {
 }
 
 export async function meta(_req: Request, res: Response) {
-  res.json({ catsIn: CATS_IN, catsOut: CATS_OUT, useCats: USE_CATS, groups: GROUPS, channels: CHANNELS, methods: METHODS });
+  res.json(META);
 }

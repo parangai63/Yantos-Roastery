@@ -53,9 +53,11 @@ API-nya sudah tersedia, tinggal form-nya.
 ### Login (PIN 4 angka, seperti parang-ops)
 
 Aplikasi dibuka dengan PIN 4 angka tanpa memilih nama (`POST /api/auth/verify-pin`). Server
-membalas token sesi (12 jam) yang dikirim otomatis di setiap request `/api`
-(`frontend/src/api/authInterceptor.ts`). Layar terkunci lagi setelah 5 menit diam atau lewat tombol
-**Kunci**. Setelah 5 PIN salah, alamat itu dikunci 15 menit. PIN disimpan sebagai hash dan harus
+membalas token sesi yang dikirim otomatis di setiap request `/api`
+(`frontend/src/api/authInterceptor.ts`). Token disimpan di localStorage: browser ditutup lalu
+dibuka lagi tetap masuk, asalkan belum 10 menit sejak aktivitas terakhir. Setelah 10 menit diam
+(dihitung bersama untuk semua tab) atau lewat tombol **Kunci**, layar PIN muncul lagi. Server ikut
+menolak token yang diam lebih dari 12 menit (`sessions.lastSeenAt`) atau lewat 12 jam sejak masuk. Setelah 5 PIN salah, alamat itu dikunci 15 menit. PIN disimpan sebagai hash dan harus
 unik antar akun.
 
 Akun pertama dibuat dari terminal (setelah `npx prisma migrate deploy`):
@@ -67,7 +69,8 @@ npm run user -- list
 npm run user -- reset-pin "Nama" 5678
 ```
 
-Admin juga bisa mengelola akun lewat API `/api/users` (belum ada halaman UI-nya).
+Setelah itu akun dikelola dari menu **Akun** di aplikasi: semua pengguna bisa mengganti PIN sendiri;
+admin bisa menambah akun, mengubah peran, menonaktifkan, dan mereset PIN akun lain.
 
 ## Deploy ke Vercel
 
@@ -84,10 +87,19 @@ domain frontend sendiri (tanpa CORS) dan `VITE_API_URL` dibiarkan kosong. Jangan
 di dalam `backend/` atau `frontend/`.
 
 1. Backend → Settings → Environment Variables: `DATABASE_URL` (pooler 6543,
-   `?pgbouncer=true&connection_limit=1`), `DIRECT_URL` (5432), `TRUST_PROXY=1`.
+   `?pgbouncer=true&connection_limit=5`), `DIRECT_URL` (5432), `TRUST_PROXY=1`.
    `DATABASE_URL` dan `DIRECT_URL` wajib; tanpa itu semua endpoint membalas 500.
+   `connection_limit=1` membuat query yang seharusnya paralel berjalan satu per satu; pooler
+   transaksi Supabase sanggup menampung 5 per instance.
 2. Migrasi & akun dijalankan dari komputer sendiri: `cd backend && npm run db:deploy`,
-   lalu `npm run user -- create "Nama" 1234 admin`.
+   lalu `npm run user -- create "Nama" 1234 admin`. Jalankan migrasi **sebelum** push kode
+   backend yang membutuhkan kolom/tabel baru (menambah kolom aman untuk kode lama).
+3. `backend/vercel.json` mengunci fungsi backend di region `sin1` (Singapura), sama dengan
+   database Supabase (`ap-southeast-1`). Jika database dipindah, sesuaikan region ini.
+
+Kecepatan bisa dilihat di DevTools → Network → pilih request `/api` → Timing: header
+`Server-Timing` berisi lama cek sesi (`auth`), baca revisi data (`rev`), status cache hitungan
+(`cache` hit/miss), query (`db`), `compute`, dan `total`.
 
 ## Isi folder
 

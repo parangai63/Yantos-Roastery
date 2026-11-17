@@ -7,7 +7,7 @@ export interface UnlockedUser {
   role: UserRole;
 }
 
-/** Disimpan di sessionStorage selama layar terbuka. */
+/** Disimpan di localStorage selama layar terbuka (lihat api/authInterceptor.ts). */
 export interface AuthSession {
   token: string;
   user: UnlockedUser;

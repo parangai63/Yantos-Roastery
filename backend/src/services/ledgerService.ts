@@ -8,7 +8,7 @@ import { badRequest, notFound } from "../lib/httpError";
 import { entryData, toEntry } from "../lib/mappers";
 import { LEDGER_TYPES, type LedgerType, type SaleItem, type StockKind } from "../engine/types";
 import { CATS_IN, CATS_OUT, USE_CATS } from "../engine/vocab";
-import { loadMaster } from "./stateService";
+import { loadState } from "./stateService";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const STOCK_KINDS: StockKind[] = ["green", "roasted", "blend", "pack"];
@@ -32,7 +32,7 @@ const opt = (b: Body, k: string) => str(b, k) || undefined;
 async function buildEntry(b: Body): Promise<Body> {
   const type = str(b, "type") as LedgerType;
   if (!LEDGER_TYPES.includes(type)) throw badRequest("Jenis transaksi tidak dikenal.");
-  const master = await loadMaster();
+  const { master } = await loadState(); // dari cache bila data belum berubah
   const need = (coll: Record<string, unknown>, id: string, label: string) => {
     if (!id || !coll[id]) throw badRequest(`${label} tidak ditemukan.`);
     return id;

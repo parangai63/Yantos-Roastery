@@ -7,7 +7,9 @@ import configRoutes from "./routes/configRoutes";
 import ledgerRoutes from "./routes/ledgerRoutes";
 import reportRoutes from "./routes/reportRoutes";
 import { requireAuth } from "./middleware/auth";
-import { errorHandler } from "./lib/httpError";
+import { errorHandler, handle } from "./lib/httpError";
+import { serverTiming } from "./lib/timing";
+import { bootstrap } from "./services/bootstrapService";
 
 const app = express();
 
@@ -24,11 +26,15 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok", service: "yantos-roastery-backend" });
 });
 
+app.use("/api", serverTiming);
+
 // /api/auth/status & /api/auth/verify-pin terbuka; sisanya di authRoutes memasang requireAuth sendiri.
 app.use("/api/auth", authRoutes);
 
 // Semua /api di bawah ini wajib login.
 app.use("/api", requireAuth);
+// Data awal AppData (master, meta, config, costs, names) dalam satu request.
+app.get("/api/bootstrap", handle(async (_req, res) => { res.json(await bootstrap()); }));
 app.use("/api/users", userRoutes);
 app.use("/api/master", masterRoutes);
 app.use("/api/config", configRoutes);

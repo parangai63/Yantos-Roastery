@@ -1,16 +1,23 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import Layout from "./components/Layout";
 import PinGate from "./components/PinGate";
 import { ToastProvider } from "./components/Toast";
+import { Loading } from "./components/ui";
 import { AppDataProvider } from "./context/AppData";
 import { AuthProvider, useAuth } from "./context/AuthContext";
-import Keuangan from "./pages/Keuangan";
-import Laporan from "./pages/Laporan";
-import Master from "./pages/Master";
-import Penjualan from "./pages/Penjualan";
-import Produksi from "./pages/Produksi";
 import Ringkasan from "./pages/Ringkasan";
-import Stok from "./pages/Stok";
+
+// Halaman pertama (Ringkasan) ikut di bundle utama; sisanya diunduh saat pertama dibuka.
+const Stok = lazy(() => import("./pages/Stok"));
+const Produksi = lazy(() => import("./pages/Produksi"));
+const Penjualan = lazy(() => import("./pages/Penjualan"));
+const Keuangan = lazy(() => import("./pages/Keuangan"));
+const Laporan = lazy(() => import("./pages/Laporan"));
+const Master = lazy(() => import("./pages/Master"));
+const Akun = lazy(() => import("./pages/Akun"));
+
+const page = (el: JSX.Element) => <Suspense fallback={<Loading />}>{el}</Suspense>;
 
 function AppContent() {
   const { user, unlock } = useAuth();
@@ -24,12 +31,13 @@ function AppContent() {
       <Routes>
         <Route element={<Layout />}>
           <Route index element={<Ringkasan />} />
-          <Route path="stok" element={<Stok />} />
-          <Route path="produksi" element={<Produksi />} />
-          <Route path="penjualan" element={<Penjualan />} />
-          <Route path="keuangan" element={<Keuangan />} />
-          <Route path="laporan" element={<Laporan />} />
-          <Route path="master" element={<Master />} />
+          <Route path="stok" element={page(<Stok />)} />
+          <Route path="produksi" element={page(<Produksi />)} />
+          <Route path="penjualan" element={page(<Penjualan />)} />
+          <Route path="keuangan" element={page(<Keuangan />)} />
+          <Route path="laporan" element={page(<Laporan />)} />
+          <Route path="master" element={page(<Master />)} />
+          <Route path="akun" element={page(<Akun />)} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

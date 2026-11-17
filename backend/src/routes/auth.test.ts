@@ -31,6 +31,11 @@ vi.mock("../prismaClient", () => {
   };
   const session = {
     create: async ({ data }: Row) => { db.sessions.push({ createdAt: new Date(), ...data }); return data; },
+    updateMany: async ({ where, data }: Row) => {
+      const rows = db.sessions.filter((s) => matches(s, where));
+      rows.forEach((s) => Object.assign(s, data));
+      return { count: rows.length };
+    },
     deleteMany: async ({ where }: Row) => { const before = db.sessions.length; db.sessions = db.sessions.filter((s) => !matches(s, where)); return { count: before - db.sessions.length }; },
     findUnique: async ({ where }: Row) => {
       const s = db.sessions.find((x) => x.id === where.id);
@@ -41,7 +46,7 @@ vi.mock("../prismaClient", () => {
 });
 
 const { default: app } = await import("../app");
-const { createUser } = await import("../services/authService");
+const { createUser, IDLE_MINUTES } = await import("../services/authService");
 
 let server: Server;
 let base = "";
@@ -92,6 +97,24 @@ describe("login PIN (verify-pin)", () => {
 
     expect((await call("POST", "/api/auth/logout", { token })).status).toBe(204);
     expect((await call("GET", "/api/auth/me", { token })).status).toBe(401);
+  });
+
+  it("sesi diam lebih dari batas → 401 dan sesi dihapus; request memperbarui lastSeenAt", async () => {
+    await createUser({ name: "Yanto", pin: "1234", role: "admin" });
+    const ago = (min: number) => new Date(Date.now() - min * 60_000);
+
+    // Masih dalam batas: diterima, lastSeenAt maju ke sekarang.
+    const t1 = (await call("POST", "/api/auth/verify-pin", { body: { pin: "1234" } })).body.token;
+    db.sessions[0].lastSeenAt = ago(5);
+    expect((await call("GET", "/api/auth/me", { token: t1 })).status).toBe(200);
+    expect(Date.now() - db.sessions[0].lastSeenAt.getTime()).toBeLessThan(5_000);
+
+    // Lewat batas diam: ditolak dan baris sesinya hilang.
+    const t2 = (await call("POST", "/api/auth/verify-pin", { body: { pin: "1234" } })).body.token;
+    const s2 = db.sessions.find((s) => s !== db.sessions[0])!;
+    s2.lastSeenAt = ago(IDLE_MINUTES + 1);
+    expect((await call("GET", "/api/auth/me", { token: t2 })).status).toBe(401);
+    expect(db.sessions).not.toContain(s2);
   });
 
   it("PIN salah → 401 dengan { message }; format PIN salah juga 401", async () => {

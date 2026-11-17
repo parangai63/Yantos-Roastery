@@ -1,5 +1,5 @@
 import { API_URL, handleResponse, jsonInit } from "./config";
-import type { Config, MasterData, Meta } from "../types";
+import type { Bootstrap, Config, MasterData, Meta } from "../types";
 
 const BASE_URL = `${API_URL}/api/master`;
 const CONFIG_URL = `${API_URL}/api/config`;
@@ -40,5 +40,11 @@ export async function fetchConfig(): Promise<Config> {
 
 export async function saveConfig(body: Config): Promise<Config> {
   const res = await fetch(CONFIG_URL, jsonInit("PUT", body));
+  return handleResponse(res);
+}
+
+/** Master, meta, config, costs, dan names sekaligus (satu request, dipakai AppData). */
+export async function fetchBootstrap(): Promise<Bootstrap> {
+  const res = await fetch(`${API_URL}/api/bootstrap`);
   return handleResponse(res);
 }
