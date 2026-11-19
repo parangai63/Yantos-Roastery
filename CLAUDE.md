@@ -127,6 +127,18 @@ frontend/src/
   bernama (`fetchX`, `createX`, …) dengan `handleResponse` dari `api/config.ts`. Token ditempel oleh
   `api/authInterceptor.ts` (dipasang di `main.tsx`); `context/AuthContext.tsx` + `components/PinGate.tsx`.
 - Test alur login: `backend/src/routes/auth.test.ts` (Prisma tiruan, tanpa DB).
+- **Riwayat aktivitas** (`ActivityLog`, tab "Riwayat", semua peran boleh lihat, `GET /api/activity`):
+  setiap tulis di services memanggil `logActivity(db, req.actor, {...})` dari `lib/activity.ts` di transaksi
+  yang sama. Fitur tulis baru wajib ikut mencatat. `req.actor` = `{ id, name }`. Login/logout & nilai PIN
+  tidak dicatat. Tabel ini sengaja tanpa trigger `bump_data_rev`.
+- **Akun**: ganti nama (`PATCH /api/auth/me`, admin: `PATCH /api/users/:id { name }`), hapus akun =
+  soft delete (`deletedAt` + `active=false`; sendiri `DELETE /api/auth/me { pin }`, admin `DELETE /api/users/:id`).
+  Nama unik dicek di `authService` hanya antar akun yang belum dihapus (bukan constraint DB).
+  `LedgerEntry.by` = nama saat dicatat (tidak ikut berubah), `byUserId` = akunnya.
+- **Reset data** (`/api/admin/*`, admin): menghapus semua tabel kecuali `users`/`sessions`, lalu menulis
+  satu catatan "reset" di riwayat. Wajib kalimat `HAPUS SEMUA DATA` + PIN (dicek server); frontend
+  mengunduh `GET /api/admin/backup` dulu dan membatalkan bila gagal. Belum ada fitur pulihkan dari backup.
+  Tabel baru wajib ditambahkan ke `TRUNCATE` di `adminService.resetAll` dan ke backup.
 - Setelah mengubah engine: `cd backend && npm test`. Test memakai data/ langsung, tanpa DB.
 
 ## Angka patokan (harus tetap sama setelah refactor)

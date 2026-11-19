@@ -16,6 +16,7 @@ const Keuangan = lazy(() => import("./pages/Keuangan"));
 const Laporan = lazy(() => import("./pages/Laporan"));
 const Master = lazy(() => import("./pages/Master"));
 const Akun = lazy(() => import("./pages/Akun"));
+const Riwayat = lazy(() => import("./pages/Riwayat"));
 
 const page = (el: JSX.Element) => <Suspense fallback={<Loading />}>{el}</Suspense>;
 
@@ -37,6 +38,7 @@ function AppContent() {
           <Route path="keuangan" element={page(<Keuangan />)} />
           <Route path="laporan" element={page(<Laporan />)} />
           <Route path="master" element={page(<Master />)} />
+          <Route path="riwayat" element={page(<Riwayat />)} />
           <Route path="akun" element={page(<Akun />)} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

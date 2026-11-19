@@ -21,19 +21,19 @@ export async function list(_req: Request, res: Response) {
 }
 
 export async function create(req: Request, res: Response) {
-  res.status(201).json(await SAVE[kindParam(req)](null, req.body));
+  res.status(201).json(await SAVE[kindParam(req)](req.actor, null, req.body));
 }
 
 export async function update(req: Request, res: Response) {
-  res.json(await SAVE[kindParam(req)](req.params.id, req.body));
+  res.json(await SAVE[kindParam(req)](req.actor, req.params.id, req.body));
 }
 
 export async function setActive(req: Request, res: Response) {
-  res.json(await master.setActive(kindParam(req), req.params.id, req.body.active !== false));
+  res.json(await master.setActive(req.actor, kindParam(req), req.params.id, req.body.active !== false));
 }
 
 export async function remove(req: Request, res: Response) {
-  await master.removeMaster(kindParam(req), req.params.id);
+  await master.removeMaster(req.actor, kindParam(req), req.params.id);
   res.status(204).end();
 }
 
@@ -42,7 +42,7 @@ export async function getConfig(_req: Request, res: Response) {
 }
 
 export async function saveConfig(req: Request, res: Response) {
-  res.json(await master.saveConfig(req.body));
+  res.json(await master.saveConfig(req.actor, req.body));
 }
 
 export async function meta(_req: Request, res: Response) {

@@ -6,6 +6,8 @@ import masterRoutes from "./routes/masterRoutes";
 import configRoutes from "./routes/configRoutes";
 import ledgerRoutes from "./routes/ledgerRoutes";
 import reportRoutes from "./routes/reportRoutes";
+import activityRoutes from "./routes/activityRoutes";
+import adminRoutes from "./routes/adminRoutes";
 import { requireAuth } from "./middleware/auth";
 import { errorHandler, handle } from "./lib/httpError";
 import { serverTiming } from "./lib/timing";
@@ -40,6 +42,8 @@ app.use("/api/master", masterRoutes);
 app.use("/api/config", configRoutes);
 app.use("/api/ledger", ledgerRoutes);
 app.use("/api/reports", reportRoutes);
+app.use("/api/activity", activityRoutes);
+app.use("/api/admin", adminRoutes);
 
 // Fallback 404
 app.use((_req, res) => {

@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import * as auth from "../services/authService";
+import { badRequest } from "../lib/httpError";
 
 /**
  * GET /api/auth/status
@@ -34,7 +35,18 @@ export async function logout(req: Request, res: Response) {
 
 /** PUT /api/auth/pin — Body: { oldPin, newPin } */
 export async function changePin(req: Request, res: Response) {
-  await auth.changeOwnPin(req.user.id, req.body?.oldPin, req.body?.newPin);
+  await auth.changeOwnPin(req.actor, req.body?.oldPin, req.body?.newPin);
+  res.status(204).end();
+}
+
+/** PATCH /api/auth/me — Body: { name }. Ganti nama sendiri; balasan: akun terbaru. */
+export async function renameMe(req: Request, res: Response) {
+  res.json(await auth.renameSelf(req.actor, req.body || {}));
+}
+
+/** DELETE /api/auth/me — Body: { pin }. Hapus akun sendiri (soft delete) lalu semua sesi dicabut. */
+export async function deleteMe(req: Request, res: Response) {
+  await auth.deleteUser(req.actor, req.user.id, req.body?.pin);
   res.status(204).end();
 }
 
@@ -45,10 +57,17 @@ export async function getUsers(_req: Request, res: Response) {
 
 /** POST /api/users (admin) — Body: { name, pin, role } */
 export async function createUser(req: Request, res: Response) {
-  res.status(201).json(await auth.createUser(req.body || {}));
+  res.status(201).json(await auth.createUser(req.body || {}, req.actor));
 }
 
-/** PATCH /api/users/:id (admin) — Body: { active?, role?, pin? } */
+/** PATCH /api/users/:id (admin) — Body: { name?, active?, role?, pin? } */
 export async function updateUser(req: Request, res: Response) {
-  res.json(await auth.updateUser(req.user.id, req.params.id, req.body || {}));
+  res.json(await auth.updateUser(req.actor, req.params.id, req.body || {}));
+}
+
+/** DELETE /api/users/:id (admin) — hapus akun (soft delete). Untuk akun sendiri pakai DELETE /api/auth/me. */
+export async function deleteUser(req: Request, res: Response) {
+  if (req.params.id === req.user.id) throw badRequest("Untuk menghapus akun sendiri, gunakan menu Hapus akun saya.");
+  await auth.deleteUser(req.actor, req.params.id);
+  res.status(204).end();
 }

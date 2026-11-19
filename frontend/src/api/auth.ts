@@ -29,3 +29,15 @@ export async function changePin(oldPin: string, newPin: string): Promise<void> {
   const res = await fetch(`${BASE_URL}/pin`, jsonInit("PUT", { oldPin, newPin }));
   return handleResponse(res);
 }
+
+/** Ganti nama sendiri. Balasan: akun terbaru (dipakai untuk memperbarui sesi tersimpan). */
+export async function renameMe(name: string): Promise<UnlockedUser> {
+  const res = await fetch(`${BASE_URL}/me`, jsonInit("PATCH", { name }));
+  return handleResponse(res);
+}
+
+/** Hapus akun sendiri (wajib PIN). Setelah berhasil semua sesi akun ini dicabut. */
+export async function deleteMe(pin: string): Promise<void> {
+  const res = await fetch(`${BASE_URL}/me`, jsonInit("DELETE", { pin }));
+  return handleResponse(res);
+}

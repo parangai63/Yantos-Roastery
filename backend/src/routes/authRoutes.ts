@@ -11,6 +11,8 @@ router.post("/verify-pin", handle(c.verifyPin));
 
 // Wajib login
 router.get("/me", requireAuth, handle(c.me));
+router.patch("/me", requireAuth, handle(c.renameMe));
+router.delete("/me", requireAuth, handle(c.deleteMe));
 router.post("/logout", requireAuth, handle(c.logout));
 router.put("/pin", requireAuth, handle(c.changePin));
 

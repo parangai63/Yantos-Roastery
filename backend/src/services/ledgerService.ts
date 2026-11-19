@@ -9,6 +9,8 @@ import { entryData, toEntry } from "../lib/mappers";
 import { LEDGER_TYPES, type LedgerType, type SaleItem, type StockKind } from "../engine/types";
 import { CATS_IN, CATS_OUT, USE_CATS } from "../engine/vocab";
 import { loadState } from "./stateService";
+import { type Actor, logActivity } from "../lib/activity";
+import { entrySummary } from "../lib/ledgerSummary";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const STOCK_KINDS: StockKind[] = ["green", "roasted", "blend", "pack"];
@@ -116,11 +118,16 @@ async function buildEntry(b: Body): Promise<Body> {
   }
 }
 
-export async function createEntry(body: Body, by: string) {
+export async function createEntry(body: Body, actor: Actor) {
   const e = await buildEntry(body);
-  const row = await prisma.ledgerEntry.create({
-    data: { id: randomUUID(), type: e.type as LedgerType, date: e.date as string, by, data: entryData(e) },
-  });
+  const { master } = await loadState();
+  const id = randomUUID();
+  const [row] = await prisma.$transaction([
+    prisma.ledgerEntry.create({
+      data: { id, type: e.type as LedgerType, date: e.date as string, by: actor.name, byUserId: actor.id, data: entryData(e) },
+    }),
+    logActivity(prisma, actor, { action: "create", entity: "ledger", entityId: id, summary: "Mencatat " + entrySummary(e, master) }),
+  ]);
   return toEntry(row);
 }
 
@@ -156,15 +163,30 @@ async function getRow(id: string) {
   return row;
 }
 
-export async function markPaid(id: string, paidDate: string) {
+export async function markPaid(actor: Actor, id: string, paidDate: string) {
   const row = await getRow(id);
   if (!["sale", "green_in", "pack_in"].includes(row.type)) throw badRequest("Transaksi ini tidak punya status lunas.");
   if (!DATE_RE.test(paidDate)) throw badRequest("Tanggal lunas tidak valid.");
   const data = { ...(row.data as Prisma.JsonObject), paid: true, paidDate };
-  return toEntry(await prisma.ledgerEntry.update({ where: { id }, data: { data } }));
+  const { master } = await loadState();
+  const [updated] = await prisma.$transaction([
+    prisma.ledgerEntry.update({ where: { id }, data: { data } }),
+    logActivity(prisma, actor, {
+      action: "mark_paid", entity: "ledger", entityId: id,
+      summary: `Menandai lunas (${paidDate}) ${entrySummary({ ...data, type: row.type, date: row.date }, master)}`,
+    }),
+  ]);
+  return toEntry(updated);
 }
 
-export async function softDelete(id: string) {
-  await getRow(id);
-  await prisma.ledgerEntry.update({ where: { id }, data: { deleted: true } });
+export async function softDelete(actor: Actor, id: string) {
+  const row = await getRow(id);
+  const { master } = await loadState();
+  await prisma.$transaction([
+    prisma.ledgerEntry.update({ where: { id }, data: { deleted: true } }),
+    logActivity(prisma, actor, {
+      action: "delete", entity: "ledger", entityId: id,
+      summary: "Menghapus " + entrySummary({ ...(row.data as Prisma.JsonObject), type: row.type, date: row.date }, master),
+    }),
+  ]);
 }

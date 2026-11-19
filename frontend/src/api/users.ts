@@ -14,7 +14,13 @@ export async function createUser(body: { name: string; pin: string; role: UserRo
   return handleResponse(res);
 }
 
-export async function updateUser(id: string, body: { active?: boolean; role?: UserRole; pin?: string }): Promise<User> {
+export async function updateUser(id: string, body: { name?: string; active?: boolean; role?: UserRole; pin?: string }): Promise<User> {
   const res = await fetch(`${BASE_URL}/${id}`, jsonInit("PATCH", body));
+  return handleResponse(res);
+}
+
+/** Hapus akun lain (soft delete). Akun sendiri lewat deleteMe di api/auth.ts. */
+export async function deleteUser(id: string): Promise<void> {
+  const res = await fetch(`${BASE_URL}/${id}`, jsonInit("DELETE"));
   return handleResponse(res);
 }

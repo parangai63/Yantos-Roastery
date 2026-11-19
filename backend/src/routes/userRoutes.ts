@@ -10,5 +10,6 @@ router.use(requireAdmin);
 router.get("/", handle(c.getUsers));
 router.post("/", handle(c.createUser));
 router.patch("/:id", handle(c.updateUser));
+router.delete("/:id", handle(c.deleteUser));
 
 export default router;

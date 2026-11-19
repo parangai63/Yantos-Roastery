@@ -7,6 +7,7 @@ import type { User, UserRole } from "@prisma/client";
 import prisma from "../prismaClient";
 import { HttpError, badRequest, conflict, notFound } from "../lib/httpError";
 import { assertPin, hashPin, verifyPin as checkPin, PIN_PATTERN } from "../lib/pin";
+import { type Actor, type Changes, logActivity } from "../lib/activity";
 
 const SESSION_HOURS = 12; // batas mutlak sejak masuk
 // Browser mengunci setelah 10 menit diam (frontend AuthContext). Server memberi kelonggaran
@@ -45,7 +46,8 @@ function registerFailure(client: string) {
 
 /** Akun aktif pemilik PIN ini, atau null. */
 async function findByPin(pin: string, where: { active?: boolean; id?: { not: string } } = {}) {
-  const users = await prisma.user.findMany({ where });
+  // Akun yang sudah dihapus tidak bisa masuk, dan PIN-nya boleh dipakai akun lain.
+  const users = await prisma.user.findMany({ where: { ...where, deletedAt: null } });
   for (const u of users) if (await checkPin(pin, u.pinHash)) return u;
   return null;
 }
@@ -143,60 +145,166 @@ export async function logout(token: string) {
   await prisma.session.deleteMany({ where: { id } });
 }
 
-export async function changeOwnPin(userId: string, oldPin: unknown, newPin: unknown) {
-  const u = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+export async function changeOwnPin(actor: Actor, oldPin: unknown, newPin: unknown) {
+  const u = await prisma.user.findUniqueOrThrow({ where: { id: actor.id } });
   if (typeof oldPin !== "string" || !(await checkPin(oldPin, u.pinHash))) throw badRequest("PIN lama salah.");
   const pin = assertPin(newPin);
-  await assertPinUnused(pin, userId);
-  await prisma.user.update({ where: { id: userId }, data: { pinHash: await hashPin(pin) } });
+  await assertPinUnused(pin, actor.id);
+  await prisma.$transaction([
+    prisma.user.update({ where: { id: actor.id }, data: { pinHash: await hashPin(pin) } }),
+    logActivity(prisma, actor, { action: "pin", entity: "users", entityId: actor.id, summary: "Mengganti PIN sendiri" }),
+  ]);
+}
+
+// ---------- nama & hapus akun ----------
+
+const cleanName = (v: unknown) => {
+  const name = typeof v === "string" ? v.trim().replace(/\s+/g, " ") : "";
+  if (!name) throw badRequest("Nama wajib diisi.");
+  if (name.length > 40) throw badRequest("Nama maksimal 40 huruf.");
+  return name;
+};
+
+/** Nama unik (tanpa beda huruf besar/kecil) di antara akun yang belum dihapus. */
+async function assertNameFree(name: string, exceptId?: string) {
+  const taken = await prisma.user.findFirst({
+    where: { name: { equals: name, mode: "insensitive" }, deletedAt: null, ...(exceptId ? { id: { not: exceptId } } : {}) },
+  });
+  if (taken) throw conflict(`Nama "${name}" sudah dipakai.`);
+}
+
+/** Menolak bila perubahan ini membuat tidak ada lagi admin aktif. */
+async function assertKeepsAdmin(before: User, after: { role?: UserRole; active?: boolean }) {
+  const losesAdmin = before.role === "admin" && before.active && (after.role === "staff" || after.active === false);
+  if (losesAdmin && !(await prisma.user.count({ where: { role: "admin", active: true, deletedAt: null, id: { not: before.id } } }))) {
+    throw badRequest("Harus ada minimal satu admin aktif.");
+  }
+}
+
+async function findLiveUser(id: string) {
+  const u = await prisma.user.findUnique({ where: { id } });
+  if (!u || u.deletedAt) throw notFound("Akun tidak ditemukan.");
+  return u;
+}
+
+/** PATCH /api/auth/me — ganti nama sendiri. Entri ledger lama tetap memakai nama saat dicatat. */
+export async function renameSelf(actor: Actor, body: { name?: unknown }) {
+  const before = await findLiveUser(actor.id);
+  const name = cleanName(body.name);
+  const oldName = before.name;
+  if (name === oldName) return toPublicUser(before);
+  await assertNameFree(name, actor.id);
+  const log = logActivity(prisma, { id: actor.id, name }, {
+    action: "rename", entity: "users", entityId: actor.id,
+    summary: `Mengganti nama sendiri dari "${oldName}" menjadi "${name}"`, changes: { Nama: [oldName, name] },
+  });
+  const [u] = await prisma.$transaction([prisma.user.update({ where: { id: actor.id }, data: { name } }), log]);
+  forgetUserSessions(actor.id); // sesi di cache masih membawa nama lama
+  return toPublicUser(u);
+}
+
+/**
+ * Hapus akun = soft delete (active=false, deletedAt). Menghapus akun sendiri wajib memasukkan PIN;
+ * admin menghapus akun lain cukup konfirmasi di layar. Admin aktif terakhir tidak bisa dihapus.
+ */
+export async function deleteUser(actor: Actor, id: string, pin?: unknown) {
+  const before = await findLiveUser(id);
+  const self = id === actor.id;
+  if (self && (typeof pin !== "string" || !(await checkPin(pin, before.pinHash)))) throw badRequest("PIN salah.");
+  await assertKeepsAdmin(before, { active: false });
+  await prisma.$transaction([
+    prisma.user.update({ where: { id }, data: { active: false, deletedAt: new Date() } }),
+    prisma.session.deleteMany({ where: { userId: id } }),
+    logActivity(prisma, actor, {
+      action: "delete", entity: "users", entityId: id,
+      summary: self ? "Menghapus akun sendiri" : `Menghapus akun "${before.name}"`,
+    }),
+  ]);
+  forgetUserSessions(id);
 }
 
 // ---------- kelola akun (admin) ----------
 
 export async function listUsers() {
-  const rows = await prisma.user.findMany({ orderBy: [{ role: "asc" }, { name: "asc" }] });
+  const rows = await prisma.user.findMany({ where: { deletedAt: null }, orderBy: [{ role: "asc" }, { name: "asc" }] });
   return rows.map(toPublicUser);
 }
 
-export async function createUser(body: { name?: unknown; pin?: unknown; role?: unknown }) {
-  const name = typeof body.name === "string" ? body.name.trim() : "";
-  if (!name) throw badRequest("Nama wajib diisi.");
+/** Semua akun (termasuk yang sudah dihapus) untuk pilihan filter di halaman Riwayat. */
+export async function listUserNames() {
+  const rows = await prisma.user.findMany({ select: { id: true, name: true, deletedAt: true }, orderBy: { name: "asc" } });
+  return rows.map((u) => ({ id: u.id, name: u.name, deleted: !!u.deletedAt }));
+}
+
+const ROLE_LABEL: Record<UserRole, string> = { admin: "Admin", staff: "Staf" };
+
+/** `actor` kosong saat dipanggil dari skrip/test (tidak dicatat di riwayat). */
+export async function createUser(body: { name?: unknown; pin?: unknown; role?: unknown }, actor?: Actor) {
+  const name = cleanName(body.name);
   const role = (body.role ?? "staff") as UserRole;
   if (!ROLES.includes(role)) throw badRequest("Peran harus admin atau staff.");
   const pin = assertPin(body.pin);
-  if (await prisma.user.findFirst({ where: { name: { equals: name, mode: "insensitive" } } })) throw conflict(`Nama "${name}" sudah dipakai.`);
+  await assertNameFree(name);
   await assertPinUnused(pin);
-  const u = await prisma.user.create({ data: { id: randomUUID(), name, role, pinHash: await hashPin(pin) } });
+  const id = randomUUID();
+  const create = prisma.user.create({ data: { id, name, role, pinHash: await hashPin(pin) } });
+  if (!actor) return toPublicUser(await create);
+  const [u] = await prisma.$transaction([
+    create,
+    logActivity(prisma, actor, { action: "create", entity: "users", entityId: id, summary: `Menambah akun "${name}" (${ROLE_LABEL[role]})` }),
+  ]);
   return toPublicUser(u);
 }
 
-export async function updateUser(actorId: string, id: string, body: { active?: unknown; role?: unknown; pin?: unknown }) {
-  const before = await prisma.user.findUnique({ where: { id } });
-  if (!before) throw notFound("Akun tidak ditemukan.");
+export async function updateUser(actor: Actor, id: string, body: { name?: unknown; active?: unknown; role?: unknown; pin?: unknown }) {
+  const before = await findLiveUser(id);
 
-  const data: { active?: boolean; role?: UserRole; pinHash?: string } = {};
+  const data: { name?: string; active?: boolean; role?: UserRole; pinHash?: string } = {};
+  const changes: Changes = {};
+  const said: string[] = [];
+  if (body.name !== undefined) {
+    const name = cleanName(body.name);
+    if (name !== before.name) {
+      await assertNameFree(name, id);
+      data.name = name;
+      changes.Nama = [before.name, name];
+      said.push("mengganti nama");
+    }
+  }
   if (body.active !== undefined) {
-    if (id === actorId && body.active === false) throw badRequest("Tidak bisa menonaktifkan akun sendiri.");
+    if (id === actor.id && body.active === false) throw badRequest("Tidak bisa menonaktifkan akun sendiri.");
     data.active = Boolean(body.active);
+    if (data.active !== before.active) said.push(data.active ? "mengaktifkan" : "menonaktifkan");
   }
   if (body.role !== undefined) {
     if (!ROLES.includes(body.role as UserRole)) throw badRequest("Peran harus admin atau staff.");
     data.role = body.role as UserRole;
+    if (data.role !== before.role) {
+      changes.Peran = [ROLE_LABEL[before.role], ROLE_LABEL[data.role]];
+      said.push(`menjadikan ${ROLE_LABEL[data.role].toLowerCase()}`);
+    }
   }
   if (body.pin !== undefined) {
     const pin = assertPin(body.pin);
     await assertPinUnused(pin, id);
     data.pinHash = await hashPin(pin);
+    said.push("mereset PIN");
   }
 
   // Selalu sisakan minimal satu admin aktif.
-  const losesAdmin = before.role === "admin" && before.active && (data.role === "staff" || data.active === false);
-  if (losesAdmin && !(await prisma.user.count({ where: { role: "admin", active: true, id: { not: id } } }))) {
-    throw badRequest("Harus ada minimal satu admin aktif.");
-  }
+  await assertKeepsAdmin(before, data);
 
-  const u = await prisma.user.update({ where: { id }, data });
-  // Peran/aktif berubah: cache sesi akun ini dibuang supaya request berikutnya membaca ulang.
+  const update = prisma.user.update({ where: { id }, data });
+  const u = said.length
+    ? (await prisma.$transaction([
+      update,
+      logActivity(prisma, actor, {
+        action: "update", entity: "users", entityId: id, changes,
+        summary: `${said.join(", ").replace(/^./, (c) => c.toUpperCase())} akun "${data.name ?? before.name}"`,
+      }),
+    ]))[0]
+    : await update;
+  // Nama/peran/aktif berubah: cache sesi akun ini dibuang supaya request berikutnya membaca ulang.
   forgetUserSessions(id);
   // Nonaktif atau PIN diganti: keluarkan dari semua perangkat.
   if (data.active === false || data.pinHash) await prisma.session.deleteMany({ where: { userId: id } });

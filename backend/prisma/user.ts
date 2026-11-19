@@ -16,17 +16,18 @@ import { assertPin, hashPin, verifyPin } from "../src/lib/pin";
 const prisma = new PrismaClient();
 const [cmd, name, pin, role] = process.argv.slice(2);
 
-const findByName = (n: string) => prisma.user.findFirst({ where: { name: { equals: n.trim(), mode: "insensitive" } } });
+// Akun yang sudah dihapus (deletedAt) dilewati: namanya & PIN-nya boleh dipakai lagi.
+const findByName = (n: string) => prisma.user.findFirst({ where: { name: { equals: n.trim(), mode: "insensitive" }, deletedAt: null } });
 
 async function assertPinUnused(p: string, exceptId?: string) {
-  const others = await prisma.user.findMany({ where: exceptId ? { id: { not: exceptId } } : {} });
+  const others = await prisma.user.findMany({ where: { deletedAt: null, ...(exceptId ? { id: { not: exceptId } } : {}) } });
   for (const o of others) if (await verifyPin(p, o.pinHash)) throw new Error(`PIN sudah dipakai akun "${o.name}". Pilih PIN lain.`);
 }
 
 async function main() {
   switch (cmd) {
     case "list": {
-      const users = await prisma.user.findMany({ orderBy: { name: "asc" } });
+      const users = await prisma.user.findMany({ where: { deletedAt: null }, orderBy: { name: "asc" } });
       if (!users.length) console.log("Belum ada akun.");
       for (const u of users) console.log(`${u.name.padEnd(24)} ${u.role.padEnd(6)} ${u.active ? "aktif" : "nonaktif"}`);
       return;

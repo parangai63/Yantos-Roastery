@@ -14,6 +14,8 @@ interface AuthContextValue {
   user: UnlockedUser | null;
   unlock: (session: AuthSession) => void;
   lock: () => void;
+  /** Data akun sendiri berubah (mis. ganti nama): perbarui tampilan & sesi tersimpan. */
+  updateSelf: (user: UnlockedUser) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -59,6 +61,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(session.user);
   }, []);
 
+  const updateSelf = useCallback((next: UnlockedUser) => {
+    const session = readStoredSession();
+    const u = { id: next.id, name: next.name, role: next.role };
+    if (session) writeSession({ ...session, user: u });
+    setUser(u);
+  }, []);
+
   // Server menolak token (kedaluwarsa, akun nonaktif, PIN direset admin).
   useEffect(() => {
     window.addEventListener(UNAUTHORIZED_EVENT, lock);
@@ -70,7 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     function onStorage(e: StorageEvent) {
       if (e.key !== SESSION_STORAGE_KEY && e.key !== null) return;
       const s = readStoredSession();
-      setUser((cur) => (s ? (cur?.id === s.user.id ? cur : s.user) : null));
+      setUser((cur) => (s ? (cur?.id === s.user.id && cur.name === s.user.name ? cur : s.user) : null));
     }
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
@@ -113,7 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [user, lock]);
 
-  return <AuthContext.Provider value={{ user, unlock, lock }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ user, unlock, lock, updateSelf }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth(): AuthContextValue {

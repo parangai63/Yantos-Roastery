@@ -11,6 +11,7 @@ export const TABS: [string, string, boolean][] = [
   ["/keuangan", "Kas & Pembelian", true],
   ["/laporan", "Laporan", true],
   ["/master", "Data Master", false],
+  ["/riwayat", "Riwayat", false],
   ["/akun", "Akun", false],
 ];
 

@@ -17,10 +17,10 @@ export async function create(req: Request, res: Response) {
 }
 
 export async function markPaid(req: Request, res: Response) {
-  res.json(await ledger.markPaid(req.params.id, req.body.paidDate || today()));
+  res.json(await ledger.markPaid(req.actor, req.params.id, req.body.paidDate || today()));
 }
 
 export async function remove(req: Request, res: Response) {
-  await ledger.softDelete(req.params.id);
+  await ledger.softDelete(req.actor, req.params.id);
   res.status(204).end();
 }
