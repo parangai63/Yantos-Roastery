@@ -21,7 +21,8 @@
 import fs from "fs";
 import { PrismaClient } from "@prisma/client";
 import { compute } from "../src/engine/compute";
-import { entryData, productData } from "../src/lib/mappers";
+import { entryData, productData, supplierCreate } from "../src/lib/mappers";
+import { suppliersFromText } from "../src/lib/legacyExport";
 import type { Blend, Config, GreenBean, LedgerEntry, Master, Pack, Product, StockKind } from "../src/engine/types";
 
 type Val = string | number | boolean | null;
@@ -94,7 +95,7 @@ function build(T: Record<string, Row[]>) {
     if (it.kind === "green_bean")
       greens[id] = {
         id, name: s(it.name), category: s(it.category), price: n(it.ref_price), minKg: n(it.reorder_qty),
-        minRoastedKg: n(it.reorder_roasted_kg), supplier: s(suppliers[it.default_supplier_id as number]?.name), active: true,
+        minRoastedKg: n(it.reorder_roasted_kg), active: true,
       };
     else if (it.kind === "blend")
       blends[id] = { id, name: s(it.name), cogs: n(it.ref_price), minKg: n(it.reorder_qty), recipe: [], active: true };
@@ -121,7 +122,7 @@ function build(T: Record<string, Row[]>) {
     shares: T.profit_shares.map((x) => ({ label: s(x.label), pct: n(x.pct) })),
     routine: T.routine_payments.map((x) => ({ label: s(x.label), amount: n(x.amount) })),
   };
-  const master: Master = { greens, blends, packs, products: prods, config };
+  const master: Master = { greens, blends, packs, products: prods, suppliers: {}, config };
 
   // ----- urutan: id stock_movements terkecil per kejadian -----
   const rank: Record<string, number> = {};
@@ -190,6 +191,10 @@ function build(T: Record<string, Row[]>) {
     E.push({ ...base("dm-kas-saldo-awal", d, 0), type: "kas", dir: "in", category: "Modal/Setoran Pemilik", desc: "Saldo awal kas (dummy)", amount: n(st.opening_cash) });
   }
 
+  // Supplier default per green bean + supplier di tiap pembelian → master supplier & supplierId.
+  const defaults = T.items.filter((it) => it.kind === "green_bean")
+    .map((it) => ({ greenId: itemId[it.id as number], name: s(suppliers[it.default_supplier_id as number]?.name) }));
+  master.suppliers = suppliersFromText(defaults, E);
   return { master, entries: E, itemId };
 }
 
@@ -238,6 +243,7 @@ async function write(master: Master, entries: LedgerEntry[]) {
         await tx.blendRecipeItem.deleteMany();
         await tx.blend.deleteMany();
         await tx.pack.deleteMany();
+        await tx.supplier.deleteMany();
         await tx.greenBean.deleteMany();
         await tx.config.deleteMany();
 
@@ -248,6 +254,7 @@ async function write(master: Master, entries: LedgerEntry[]) {
         for (const b of Object.values(master.blends))
           await tx.blend.create({ data: { id: b.id, name: b.name, cogs: b.cogs, minKg: b.minKg, active: b.active, recipe: { create: b.recipe } } });
         await tx.product.createMany({ data: Object.values(master.products).map((p) => ({ id: p.id, ...productData(p) })) });
+        for (const sp of Object.values(master.suppliers)) await tx.supplier.create({ data: supplierCreate(sp) });
         await tx.ledgerEntry.createMany({
           data: entries.map((e) => ({ id: e.id, type: e.type, date: e.date, at: new Date(e.at), by: e.by, data: entryData(e as unknown as Record<string, unknown>) })),
         });

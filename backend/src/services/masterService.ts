@@ -2,14 +2,14 @@ import { randomUUID } from "crypto";
 import type { Prisma } from "@prisma/client";
 import prisma from "../prismaClient";
 import { badRequest, conflict, notFound } from "../lib/httpError";
-import { productData, toBlend, toConfig, toGreen, toPack, toProduct } from "../lib/mappers";
+import { SUPPLIER_INCLUDE, productData, toBlend, toConfig, toGreen, toPack, toProduct, toSupplier } from "../lib/mappers";
 import { type Actor, diff, fmtNum, logActivity } from "../lib/activity";
-import type { Blend, Config, GreenBean, Pack, Product } from "../engine/types";
+import type { Blend, Config, GreenBean, Pack, Product, Supplier } from "../engine/types";
 
-export type MasterKind = "greens" | "blends" | "packs" | "products";
-const PREFIX: Record<MasterKind, string> = { greens: "g_", blends: "b_", packs: "p_", products: "pr_" };
+export type MasterKind = "greens" | "blends" | "packs" | "products" | "suppliers";
+const PREFIX: Record<MasterKind, string> = { greens: "g_", blends: "b_", packs: "p_", products: "pr_", suppliers: "s_" };
 /** Sebutan di riwayat aktivitas. */
-export const KIND_LABEL: Record<MasterKind, string> = { greens: "green bean", blends: "blend", packs: "kemasan", products: "produk" };
+export const KIND_LABEL: Record<MasterKind, string> = { greens: "green bean", blends: "blend", packs: "kemasan", products: "produk", suppliers: "supplier" };
 
 export const isMasterKind = (k: string): k is MasterKind => k in PREFIX;
 
@@ -38,18 +38,21 @@ async function findOne(kind: MasterKind, id: string, db: Prisma.TransactionClien
     case "blends": { const r = await db.blend.findUnique({ where: { id }, include: { recipe: true } }); return r && toBlend(r); }
     case "packs": { const r = await db.pack.findUnique({ where: { id } }); return r && toPack(r); }
     case "products": { const r = await db.product.findUnique({ where: { id } }); return r && toProduct(r); }
+    case "suppliers": { const r = await db.supplier.findUnique({ where: { id }, include: SUPPLIER_INCLUDE }); return r && toSupplier(r); }
   }
 }
 
 export async function listMaster() {
-  const [greens, blends, packs, products] = await Promise.all([
+  const [greens, blends, packs, products, suppliers] = await Promise.all([
     prisma.greenBean.findMany({ orderBy: { name: "asc" } }),
     prisma.blend.findMany({ include: { recipe: true }, orderBy: { name: "asc" } }),
     prisma.pack.findMany({ orderBy: { name: "asc" } }),
     prisma.product.findMany({ orderBy: [{ name: "asc" }, { grams: "asc" }] }),
+    prisma.supplier.findMany({ include: SUPPLIER_INCLUDE, orderBy: { name: "asc" } }),
   ]);
   return {
     greens: greens.map(toGreen), blends: blends.map(toBlend), packs: packs.map(toPack), products: products.map(toProduct),
+    suppliers: suppliers.map(toSupplier),
   };
 }
 
@@ -62,10 +65,11 @@ const requireName = (b: { name?: string }) => {
 // ---------- riwayat aktivitas ----------
 
 const LABELS: Record<MasterKind, Record<string, string>> = {
-  greens: { name: "Nama", category: "Kategori", price: "Harga/kg", minKg: "Min. green (kg)", minRoastedKg: "Min. roasted (kg)", supplier: "Supplier" },
+  greens: { name: "Nama", category: "Kategori", price: "Harga/kg", minKg: "Min. green (kg)", minRoastedKg: "Min. roasted (kg)" },
   blends: { name: "Nama", cogs: "COGS/kg", minKg: "Min. stok (kg)", recipe: "Resep" },
   packs: { name: "Nama", unit: "Satuan", price: "Harga", minQty: "Min. stok" },
   products: { name: "Nama", kind: "Jenis", beanId: "Bean/blend", grams: "Gram", price: "Harga jual", group: "Grup", packId: "Kemasan" },
+  suppliers: { name: "Nama", phone: "Kontak", address: "Alamat", note: "Catatan", greenIds: "Green bean", packIds: "Kemasan" },
 };
 
 /** Nama green/blend/kemasan per id, supaya riwayat menampilkan nama, bukan id. */
@@ -84,8 +88,12 @@ async function nameLookup(db: Prisma.TransactionClient | typeof prisma) {
 async function readable(kind: MasterKind, obj: object | null, db: Prisma.TransactionClient | typeof prisma): Promise<Record<string, unknown>> {
   if (!obj) return {};
   const item = obj as Record<string, unknown>;
-  if (kind !== "blends" && kind !== "products") return item;
+  if (kind !== "blends" && kind !== "products" && kind !== "suppliers") return item;
   const name = await nameLookup(db);
+  if (kind === "suppliers") {
+    const names = (ids: unknown) => ((ids as string[]) || []).map(name).sort((a, b) => a.localeCompare(b, "id")).join(", ") || "-";
+    return { ...item, greenIds: names(item.greenIds), packIds: names(item.packIds) };
+  }
   if (kind === "blends") {
     const recipe = (item.recipe as Blend["recipe"]) || [];
     return { ...item, recipe: recipe.map((r) => `${name(r.greenId)} ${fmtNum(r.pct)}%`).join(" + ") || "-" };
@@ -111,7 +119,7 @@ export async function saveGreen(actor: Actor, id: string | null, b: Partial<Gree
   const name = requireName(b);
   const data = {
     name, category: b.category || "", price: +(b.price ?? 0) || 0, minKg: +(b.minKg ?? 0) || 0,
-    minRoastedKg: +(b.minRoastedKg ?? 0) || 0, supplier: b.supplier || "",
+    minRoastedKg: +(b.minRoastedKg ?? 0) || 0,
   };
   const newIdValue = id ? null : await uniqueId("greens", name);
   return prisma.$transaction(async (tx) => {
@@ -161,6 +169,38 @@ export async function savePack(actor: Actor, id: string | null, b: Partial<Pack>
   });
 }
 
+const ids = (v: unknown) => [...new Set((Array.isArray(v) ? v : []).map((x) => String(x || "").trim()).filter(Boolean))];
+
+export async function saveSupplier(actor: Actor, id: string | null, b: Partial<Supplier>) {
+  const name = requireName(b);
+  const greenIds = ids(b.greenIds), packIds = ids(b.packIds);
+  const data = { name, phone: String(b.phone || "").trim(), address: String(b.address || "").trim(), note: String(b.note || "").trim() };
+  const newIdValue = id ? null : await uniqueId("suppliers", name);
+  return prisma.$transaction(async (tx) => {
+    const before = id ? await findOne("suppliers", id, tx) : null;
+    if (id && !before) throw notFound("Data tidak ditemukan.");
+    const dup = await tx.supplier.findFirst({ where: { name: { equals: name, mode: "insensitive" }, NOT: id ? { id } : undefined } });
+    if (dup) throw conflict(`Supplier "${dup.name}" sudah ada.`);
+    const [gOk, pOk] = await Promise.all([
+      tx.greenBean.count({ where: { id: { in: greenIds } } }),
+      tx.pack.count({ where: { id: { in: packIds } } }),
+    ]);
+    if (gOk !== greenIds.length) throw badRequest("Ada green bean yang tidak ditemukan.");
+    if (pOk !== packIds.length) throw badRequest("Ada kemasan yang tidak ditemukan.");
+    const supplierId = id || newIdValue!;
+    if (id) {
+      await tx.supplier.update({ where: { id }, data });
+      await tx.supplierGreen.deleteMany({ where: { supplierId } });
+      await tx.supplierPack.deleteMany({ where: { supplierId } });
+    } else await tx.supplier.create({ data: { id: supplierId, ...data } });
+    await tx.supplierGreen.createMany({ data: greenIds.map((greenId) => ({ supplierId, greenId })) });
+    await tx.supplierPack.createMany({ data: packIds.map((packId) => ({ supplierId, packId })) });
+    const row = toSupplier(await tx.supplier.findUniqueOrThrow({ where: { id: supplierId }, include: SUPPLIER_INCLUDE }));
+    await logSave(tx, actor, "suppliers", before, row);
+    return row;
+  });
+}
+
 export async function saveProduct(actor: Actor, id: string | null, b: Partial<Product>) {
   const name = requireName(b);
   if (b.kind !== "roasted" && b.kind !== "blend") throw badRequest("Jenis produk harus roasted atau blend.");
@@ -191,6 +231,7 @@ export async function setActive(actor: Actor, kind: MasterKind, id: string, acti
       case "blends": row = toBlend(await tx.blend.update({ ...where, include: { recipe: true } })); break;
       case "packs": row = toPack(await tx.pack.update(where)); break;
       case "products": row = toProduct(await tx.product.update(where)); break;
+      case "suppliers": row = toSupplier(await tx.supplier.update({ ...where, include: SUPPLIER_INCLUDE })); break;
     }
     if (before.active !== active) {
       await logActivity(tx, actor, {
@@ -206,7 +247,7 @@ export async function setActive(actor: Actor, kind: MasterKind, id: string, acti
 // referensinya ada di dalam kolom JSON `data` dengan nama field berbeda per jenis.
 async function usage(kind: MasterKind, id: string) {
   const rows = await prisma.ledgerEntry.findMany({ where: { deleted: false }, select: { type: true, data: true } });
-  const targets: Record<MasterKind, string[]> = { greens: ["green", "roasted"], blends: ["blend"], packs: ["pack"], products: [] };
+  const targets: Record<MasterKind, string[]> = { greens: ["green", "roasted"], blends: ["blend"], packs: ["pack"], products: [], suppliers: [] };
   let ledger = 0;
   for (const r of rows) {
     const d = (r.data || {}) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -217,7 +258,8 @@ async function usage(kind: MasterKind, id: string) {
       (kind === "greens" && (d.greenId === id || parts.some((p) => p.greenId === id) || items.some((i) => i.kind === "roasted" && i.beanId === id))) ||
       (kind === "blends" && (d.blendId === id || items.some((i) => i.kind === "blend" && i.beanId === id))) ||
       (kind === "packs" && (d.packId === id || items.some((i) => i.packId === id))) ||
-      (kind === "products" && items.some((i) => i.productId === id));
+      (kind === "products" && items.some((i) => i.productId === id)) ||
+      (kind === "suppliers" && d.supplierId === id);
     if (hit) ledger++;
   }
   const [recipes, products] = await Promise.all([
@@ -247,6 +289,7 @@ export async function removeMaster(actor: Actor, kind: MasterKind, id: string) {
       case "blends": await tx.blend.delete({ where: { id } }); break; // resep ikut terhapus (onDelete: Cascade)
       case "packs": await tx.pack.delete({ where: { id } }); break;
       case "products": await tx.product.delete({ where: { id } }); break;
+      case "suppliers": await tx.supplier.delete({ where: { id } }); break; // hubungan ikut terhapus (onDelete: Cascade)
     }
     await logActivity(tx, actor, { action: "delete", entity: kind, entityId: id, summary: `Menghapus ${KIND_LABEL[kind]} "${before.name}"` });
   });

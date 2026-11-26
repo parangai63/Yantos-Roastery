@@ -14,6 +14,7 @@ const SAVE = {
   blends: master.saveBlend,
   packs: master.savePack,
   products: master.saveProduct,
+  suppliers: master.saveSupplier,
 } as const;
 
 export async function list(_req: Request, res: Response) {

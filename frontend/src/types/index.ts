@@ -2,12 +2,14 @@
 
 export type StockKind = "green" | "roasted" | "blend" | "pack";
 
-export interface GreenBean { id: string; name: string; category: string; price: number; minKg: number; minRoastedKg: number; supplier: string; active: boolean }
+export interface GreenBean { id: string; name: string; category: string; price: number; minKg: number; minRoastedKg: number; active: boolean }
 export interface Blend { id: string; name: string; cogs: number; minKg: number; recipe: { greenId: string; pct: number }[]; active: boolean }
 export interface Pack { id: string; name: string; unit: string; price: number; minQty: number; active: boolean }
 export interface Product { id: string; name: string; kind: "roasted" | "blend"; beanId: string; grams: number; price: number; group: string; packId: string; active: boolean }
 
-export interface MasterData { greens: GreenBean[]; blends: Blend[]; packs: Pack[]; products: Product[] }
+export interface Supplier { id: string; name: string; phone: string; address: string; note: string; greenIds: string[]; packIds: string[]; active: boolean }
+
+export interface MasterData { greens: GreenBean[]; blends: Blend[]; packs: Pack[]; products: Product[]; suppliers: Supplier[] }
 export interface Meta { catsIn: string[]; catsOut: string[]; useCats: string[]; groups: string[]; channels: string[]; methods: string[] }
 
 export interface Share { label: string; pct: number; amt?: number }
@@ -64,7 +66,9 @@ export interface CashLine { date: string; dir: "in" | "out"; cat: string; amt: n
 export interface Cashbook { month: string; start: number; cin: number; cout: number; end: number; lines: CashLine[] }
 // Stok & biaya rata-rata saat ini per item (GET /reports/costs), untuk hitungan langsung di form.
 export type Costs = Record<StockKind, Record<string, { qty: number; cost: number }>>;
-export interface Names { customers: string[]; suppliers: string[] }
+export interface Names { customers: string[] }
+/** Pembelian terakhir: prices["<supplierId>|<itemId>"] = harga satuan, lastSupplier[itemId] = supplier terakhir. */
+export interface Buys { prices: Record<string, { price: number; date: string }>; lastSupplier: Record<string, string> }
 
 /** GET /api/bootstrap: data awal AppData dalam satu request. */
-export interface Bootstrap { master: MasterData; meta: Meta; config: Config; costs: Costs; names: Names }
+export interface Bootstrap { master: MasterData; meta: Meta; config: Config; costs: Costs; names: Names; buys: Buys }

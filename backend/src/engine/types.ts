@@ -10,7 +10,6 @@ export interface GreenBean {
   price: number;
   minKg: number;
   minRoastedKg: number;
-  supplier: string;
   active: boolean;
 }
 
@@ -34,6 +33,18 @@ export interface Pack {
   unit: string;
   price: number;
   minQty: number;
+  active: boolean;
+}
+
+// Supplier: item yang bisa dipasok disimpan sebagai daftar id (tabel supplier_greens/supplier_packs).
+export interface Supplier {
+  id: string;
+  name: string;
+  phone: string;
+  address: string;
+  note: string;
+  greenIds: string[];
+  packIds: string[];
   active: boolean;
 }
 
@@ -73,6 +84,7 @@ export interface Master {
   blends: Record<string, Blend>;
   packs: Record<string, Pack>;
   products: Record<string, Product>;
+  suppliers: Record<string, Supplier>;
   config: Config;
 }
 
@@ -90,7 +102,8 @@ interface Base {
 
 interface Payable {
   total: number;
-  supplier?: string;
+  supplierId?: string; // id master supplier
+  supplier?: string; // nama supplier saat dicatat (snapshot, tidak ikut berubah)
   paid: boolean;
   paidDate?: string;
 }

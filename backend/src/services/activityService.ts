@@ -10,7 +10,7 @@ const MAX_LIMIT = 100;
 export async function listActivity(q: { userId?: string; entity?: string; before?: string; limit?: number }) {
   const where: Prisma.ActivityLogWhereInput = {};
   if (q.userId) where.userId = q.userId;
-  if (q.entity) where.entity = q.entity === "master" ? { in: ["greens", "blends", "packs", "products"] } : q.entity;
+  if (q.entity) where.entity = q.entity === "master" ? { in: ["greens", "blends", "packs", "products", "suppliers"] } : q.entity;
   const before = q.before ? new Date(q.before) : null;
   if (before && !isNaN(before.getTime())) where.at = { lt: before };
   const take = Math.min(MAX_LIMIT, Math.max(1, q.limit || 50));

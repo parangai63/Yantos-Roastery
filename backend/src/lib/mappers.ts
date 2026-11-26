@@ -4,13 +4,21 @@
 import type { Prisma } from "@prisma/client";
 import type * as DB from "@prisma/client";
 import { DEFAULT_CONFIG } from "../engine/vocab";
-import type { Blend, Config, GreenBean, LedgerEntry, Pack, Product, Routine, Share } from "../engine/types";
+import type { Blend, Config, GreenBean, LedgerEntry, Pack, Product, Routine, Share, Supplier } from "../engine/types";
 
 const num = (d: Prisma.Decimal | number | null | undefined) => (d == null ? 0 : Number(d));
 
 export const toGreen = (g: DB.GreenBean): GreenBean => ({
   id: g.id, name: g.name, category: g.category, price: num(g.price), minKg: num(g.minKg),
-  minRoastedKg: num(g.minRoastedKg), supplier: g.supplier, active: g.active,
+  minRoastedKg: num(g.minRoastedKg), active: g.active,
+});
+
+/** Baris supplier + hubungannya. Daftar id diurutkan supaya diff riwayat stabil. */
+export type SupplierRow = DB.Supplier & { greens: { greenId: string }[]; packs: { packId: string }[] };
+export const SUPPLIER_INCLUDE = { greens: { select: { greenId: true } }, packs: { select: { packId: true } } } as const;
+export const toSupplier = (s: SupplierRow): Supplier => ({
+  id: s.id, name: s.name, phone: s.phone, address: s.address, note: s.note, active: s.active,
+  greenIds: s.greens.map((g) => g.greenId).sort(), packIds: s.packs.map((p) => p.packId).sort(),
 });
 
 export const toBlend = (b: DB.Blend & { recipe: DB.BlendRecipeItem[] }): Blend => ({
@@ -25,6 +33,13 @@ export const toPack = (p: DB.Pack): Pack => ({
 export const toProduct = (p: DB.Product): Product => ({
   id: p.id, name: p.name, kind: p.kind, beanId: (p.kind === "blend" ? p.blendId : p.greenId) || "",
   grams: p.grams, price: num(p.price), group: p.group, packId: p.packId || "", active: p.active,
+});
+
+/** Data Prisma untuk membuat supplier beserta hubungannya (dipakai seed). */
+export const supplierCreate = (s: Supplier) => ({
+  id: s.id, name: s.name, phone: s.phone || "", address: s.address || "", note: s.note || "", active: s.active !== false,
+  greens: { create: s.greenIds.map((greenId) => ({ greenId })) },
+  packs: { create: s.packIds.map((packId) => ({ packId })) },
 });
 
 export const productData = (p: Product) => ({

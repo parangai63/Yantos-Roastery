@@ -5,6 +5,7 @@ import { useToast } from "../components/Toast";
 import { Line, Loading, Panel, Segmented } from "../components/ui";
 import { useAppData } from "../context/AppData";
 import { useLoad } from "../hooks/useLoad";
+import type { LedgerEntry, Supplier } from "../types";
 import { BULAN, mLabel, nf, pct, rp, rps, short } from "../utils/format";
 
 type Sub = "bulanan" | "tahunan" | "hpp" | "tagihan";
@@ -175,13 +176,43 @@ function Hpp() {
 }
 
 function Tagihan() {
+  const { master } = useAppData();
   const { data: r, error } = useLoad(() => fetchBills(), []);
   if (!r) return <Loading error={error} />;
   const tot = (l: typeof r.recv) => rp(l.reduce((a, e) => a + (Number(e.total) || 0), 0));
   return (
     <div className="grid2b">
       <Panel title="Piutang pelanggan" hint={r.recv.length ? tot(r.recv) : ""}><EntryFeed entries={r.recv} empty="Tidak ada piutang." /></Panel>
-      <Panel title="Hutang ke supplier" hint={r.pay.length ? tot(r.pay) : ""}><EntryFeed entries={r.pay} empty="Tidak ada hutang." /></Panel>
+      <Panel title="Hutang ke supplier" hint={r.pay.length ? tot(r.pay) : ""}>
+        {!r.pay.length ? <p className="empty">Tidak ada hutang.</p> : (
+          <div className="grid gap-4">
+            {payBySupplier(r.pay, master?.suppliers || []).map((g) => (
+              <div key={g.key} className="grid gap-1.5">
+                <div className="flex items-baseline justify-between gap-2">
+                  <b>{g.name}</b>
+                  <span className="hint">{g.entries.length} transaksi · {tot(g.entries)}</span>
+                </div>
+                <EntryFeed entries={g.entries} empty="" />
+              </div>
+            ))}
+          </div>
+        )}
+      </Panel>
     </div>
   );
+}
+
+/** Hutang dikelompokkan per supplier, yang terbesar dulu. Nama dari master (terbaru), atau nama saat dicatat. */
+function payBySupplier(pay: LedgerEntry[], suppliers: Supplier[]) {
+  const groups = new Map<string, { key: string; name: string; total: number; entries: LedgerEntry[] }>();
+  for (const e of pay) {
+    const id = typeof e.supplierId === "string" ? e.supplierId : "";
+    const key = id || "_none";
+    const name = suppliers.find((s) => s.id === id)?.name || (typeof e.supplier === "string" && e.supplier) || "Tanpa supplier";
+    const g = groups.get(key) || { key, name, total: 0, entries: [] };
+    g.total += Number(e.total) || 0;
+    g.entries.push(e);
+    groups.set(key, g);
+  }
+  return [...groups.values()].sort((a, b) => b.total - a.total);
 }

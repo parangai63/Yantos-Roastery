@@ -1,6 +1,6 @@
 // Port VIEWS.keuangan: buku kas masuk/keluar, beli green bean, beli kemasan.
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { createLedgerEntry, deleteLedgerEntry, fetchLedgerEntries } from "../api/ledger";
 import { fetchCashbook } from "../api/reports";
 import EntryFeed from "../components/EntryFeed";
@@ -27,22 +27,54 @@ export default function Keuangan() {
 }
 
 function EntryForm({ sub }: { sub: Sub }) {
-  const { month, meta, config, names, changed } = useAppData();
+  const { month, meta, config, master, buys, changed } = useAppData();
   const toast = useToast();
   const [date, setDate] = useState(today());
   const [dir, setDir] = useState<"in" | "out">("out");
   const [category, setCategory] = useState("Pengeluaran Lainnya");
   const [desc, setDesc] = useState("");
   const [total, setTotal] = useState(0);
+  // true setelah total diketik sendiri: isian otomatis dari harga terakhir tidak menimpanya lagi.
+  const [totalTouched, setTotalTouched] = useState(false);
   const [item, setItem] = useState("");
   const [qty, setQty] = useState("");
-  const [supplier, setSupplier] = useState("");
+  const [supplierId, setSupplierId] = useState("");
   const [paid, setPaid] = useState(true);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
-  if (!meta || !config) return <Loading />;
   const unit = sub === "green" ? "kg" : "pcs";
   const q = num(qty);
+
+  // ----- supplier & harga (beli green / kemasan) -----
+  const suppliers = (master?.suppliers || []).filter((s) => s.active);
+  const supplies = (s: { greenIds: string[]; packIds: string[] }) => (sub === "green" ? s.greenIds : s.packIds).includes(item);
+  const linked = item ? suppliers.filter(supplies) : [];
+  const others = suppliers.filter((s) => !linked.includes(s));
+  const lastPrice = (sid: string) => (sid && item ? buys.prices[`${sid}|${item}`] : undefined);
+  const refPrice = item ? (sub === "green" ? master?.greens.find((g) => g.id === item)?.price : master?.packs.find((p) => p.id === item)?.price) || 0 : 0;
+  const chosen = suppliers.find((s) => s.id === supplierId);
+  const unitPrice = lastPrice(supplierId)?.price || refPrice;
+
+  // Ganti item: pilih supplier otomatis (supplier terakhir untuk item ini, atau satu-satunya pemasok).
+  const pickItem = (id: string) => {
+    setItem(id);
+    setTotalTouched(false);
+    const sup = (master?.suppliers || []).filter((s) => s.active && (sub === "green" ? s.greenIds : s.packIds).includes(id));
+    const last = buys.lastSupplier[id];
+    setSupplierId(sup.some((s) => s.id === last) ? last : sup.length === 1 ? sup[0].id : "");
+  };
+
+  // Total otomatis = harga satuan terakhir (atau harga referensi master) × jumlah, selama belum diketik sendiri.
+  useEffect(() => {
+    if (sub === "kas" || totalTouched) return;
+    setTotal(q > 0 && unitPrice > 0 ? Math.round(q * unitPrice) : 0);
+  }, [sub, totalTouched, q, unitPrice]);
+
+  if (!meta || !config) return <Loading />;
+  const priceLabel = (sid: string) => {
+    const lp = lastPrice(sid);
+    return lp ? ` · terakhir ${rp(lp.price)}/${unit} (${dLabel(lp.date)})` : "";
+  };
 
   // Memilih kategori ikut menyetel arah (kategori pemasukan → Masuk).
   const pickCategory = (c: string) => { setCategory(c); setDir(meta.catsIn.includes(c) ? "in" : "out"); };
@@ -64,13 +96,13 @@ function EntryForm({ sub }: { sub: Sub }) {
       if (!item) return toast("Pilih barang dulu.", true);
       if (!(q > 0)) return toast("Isi jumlah.", true);
       body = sub === "green" ? { type: "green_in", greenId: item, kg: q } : { type: "pack_in", packId: item, qty: Math.round(q) };
-      Object.assign(body, { date, total, supplier, paid, note });
+      Object.assign(body, { date, total, supplierId, paid, note });
     }
     setBusy(true);
     try {
       await createLedgerEntry(body);
       toast("Tersimpan.");
-      setQty(""); setTotal(0); setNote(""); setDesc("");
+      setQty(""); setTotal(0); setTotalTouched(false); setNote(""); setDesc("");
       changed();
     } catch (e) {
       toast((e as Error).message, true);
@@ -112,23 +144,43 @@ function EntryForm({ sub }: { sub: Sub }) {
         </>
       ) : (
         <>
-          <div className="row">
-            {dateField}
-            <label className="field"><span>Supplier</span>
-              <input className="input" list="suppList" value={supplier} onChange={(e) => setSupplier(e.target.value)} placeholder={sub === "green" ? "Mas Heri, Prau…" : "Opsional"} />
-              <datalist id="suppList">{names.suppliers.map((s) => <option key={s} value={s} />)}</datalist>
-            </label>
-          </div>
+          {dateField}
           <label className="field"><span>{sub === "green" ? "Green bean" : "Kemasan"}</span>
-            <ItemSelect kind={sub} show={sub} value={item} onChange={setItem} required />
+            <ItemSelect kind={sub} show={sub} value={item} onChange={pickItem} required />
           </label>
+          <label className="field"><span>Supplier</span>
+            <select className="input" value={supplierId} onChange={(e) => { setSupplierId(e.target.value); setTotalTouched(false); }} disabled={!item}>
+              <option value="">{item ? "Tanpa supplier" : "Pilih barang dulu"}</option>
+              {linked.length > 0 && (
+                <optgroup label={`Memasok ${sub === "green" ? "bean" : "kemasan"} ini`}>
+                  {linked.map((s) => <option key={s.id} value={s.id}>{s.name}{priceLabel(s.id)}</option>)}
+                </optgroup>
+              )}
+              {others.length > 0 && (
+                <optgroup label={linked.length ? "Supplier lain" : "Semua supplier"}>
+                  {others.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </optgroup>
+              )}
+            </select>
+          </label>
+          {!suppliers.length ? <p className="hint">Belum ada supplier. Tambahkan di Data Master → Supplier.</p>
+            : chosen && item && !supplies(chosen) ? <p className="hint">{chosen.name} akan otomatis dicatat sebagai pemasok {sub === "green" ? "bean" : "kemasan"} ini.</p>
+            : item && !linked.length ? <p className="hint">Belum ada supplier yang tercatat memasok {sub === "green" ? "bean" : "kemasan"} ini.</p> : null}
           <div className="row">
             <label className="field"><span>{sub === "green" ? "Berat (kg)" : "Jumlah (pcs)"}</span>
               <input className="input" type="number" step={sub === "green" ? "any" : "1"} min="0" value={qty} onChange={(e) => setQty(e.target.value)} required />
             </label>
-            <label className="field"><span>Total harga (Rp)</span><MoneyInput value={total} onChange={setTotal} required /></label>
+            <label className="field"><span>Total harga (Rp)</span><MoneyInput value={total} onChange={(n) => { setTotal(n); setTotalTouched(true); }} required /></label>
           </div>
-          <div className="calc">{q && total ? <div>Harga per {unit}: <b>{rp(total / q)}</b></div> : `Harga per ${unit} muncul setelah jumlah dan total diisi.`}</div>
+          <div className="calc">
+            {q && total ? <div>Harga per {unit}: <b>{rp(total / q)}</b></div> : <div>Harga per {unit} muncul setelah jumlah dan total diisi.</div>}
+            {item && (lastPrice(supplierId)
+              ? <div>Harga terakhir dari {chosen?.name}: <b>{rp(lastPrice(supplierId)!.price)}</b>/{unit} ({dLabel(lastPrice(supplierId)!.date)})</div>
+              : refPrice > 0 ? <div>Harga referensi master: <b>{rp(refPrice)}</b>/{unit}</div> : null)}
+            {totalTouched && unitPrice > 0 && q > 0 && (
+              <div><button type="button" className="btn btn-ghost btn-sm" onClick={() => setTotalTouched(false)}>Hitung ulang dari harga {rp(unitPrice)}/{unit}</button></div>
+            )}
+          </div>
           <label className="check"><input type="checkbox" checked={paid} onChange={(e) => setPaid(e.target.checked)} /> Sudah dibayar (masuk buku kas)</label>
         </>
       )}

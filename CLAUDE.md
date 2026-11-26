@@ -49,7 +49,7 @@ UI basics → shell → views (satu objek per tab di `VIEWS`) → global events 
 ## Model data (database artifact)
 
 Koleksi master (satu dokumen per item, id berawalan):
-- `greens/g_*`   green bean: name, category, price (/kg), minKg, minRoastedKg, supplier, active
+- `greens/g_*`   green bean: name, category, price (/kg), minKg, minRoastedKg, supplier (teks; di versi baru dipindah ke master supplier), active
 - `blends/b_*`   blend: name, cogs (/kg), minKg, recipe [], active
 - `packs/p_*`    kemasan: name, unit, price, minQty, active
 - `products/pr_*` daftar harga jual: name, kind (`roasted`|`blend`), beanId, grams, price, group, packId
@@ -140,6 +140,13 @@ frontend/src/
   mengunduh `GET /api/admin/backup` dulu dan membatalkan bila gagal. Belum ada fitur pulihkan dari backup.
   Tabel baru wajib ditambahkan ke `TRUNCATE` di `adminService.resetAll` dan ke backup.
 - Setelah mengubah engine: `cd backend && npm test`. Test memakai data/ langsung, tanpa DB.
+- **Supplier** (`Supplier` id `s_*`, tab Data Master → Supplier): banyak-ke-banyak dengan green bean
+  (`supplier_greens`) dan kemasan (`supplier_packs`). `green_in`/`pack_in` menyimpan `supplierId` + `supplier`
+  (nama saat dicatat, tidak ikut berubah). Beli dari supplier yang belum terhubung ke item → hubungan ditambah
+  otomatis (`ledgerService.supplierLink`, tercatat di riwayat). Supplier diarsipkan tidak bisa dipakai beli.
+  Form beli: pilih item dulu, supplier difilter & dipilih otomatis (supplier terakhir / satu-satunya pemasok),
+  total terisi dari harga terakhir per supplier–item (`bootstrap.buys`, dihitung dari ledger) atau harga referensi.
+  Data teks lama dipindah oleh migrasi `20261126000000_suppliers` (id = `s_` + slug nama, sama dengan `supplierIdOf`).
 
 ## Angka patokan (harus tetap sama setelah refactor)
 

@@ -12,17 +12,18 @@
 import prisma from "../prismaClient";
 import { compute, type ComputeResult } from "../engine/compute";
 import type { LedgerEntry, Master } from "../engine/types";
-import { toBlend, toConfig, toEntry, toGreen, toPack, toProduct } from "../lib/mappers";
+import { SUPPLIER_INCLUDE, toBlend, toConfig, toEntry, toGreen, toPack, toProduct, toSupplier } from "../lib/mappers";
 import { mark, timed } from "../lib/timing";
 
 const byId = <T extends { id: string }>(list: T[]) => Object.fromEntries(list.map((x) => [x.id, x]));
 
 export async function loadMaster(): Promise<Master> {
-  const [greens, blends, packs, products, config] = await Promise.all([
+  const [greens, blends, packs, products, suppliers, config] = await Promise.all([
     prisma.greenBean.findMany(),
     prisma.blend.findMany({ include: { recipe: true } }),
     prisma.pack.findMany(),
     prisma.product.findMany(),
+    prisma.supplier.findMany({ include: SUPPLIER_INCLUDE }),
     prisma.config.findUnique({ where: { id: "main" } }),
   ]);
   return {
@@ -30,6 +31,7 @@ export async function loadMaster(): Promise<Master> {
     blends: byId(blends.map(toBlend)),
     packs: byId(packs.map(toPack)),
     products: byId(products.map(toProduct)),
+    suppliers: byId(suppliers.map(toSupplier)),
     config: toConfig(config),
   };
 }

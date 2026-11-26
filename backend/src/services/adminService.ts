@@ -30,18 +30,19 @@ export async function dataSummary() {
 
 /** Isi lengkap database (tanpa akun & sesi) sebagai JSON. */
 export async function backup(actor: Actor) {
-  const [config, greens, blends, packs, products, ledger, activity] = await Promise.all([
+  const [config, greens, blends, packs, products, suppliers, ledger, activity] = await Promise.all([
     prisma.config.findMany(),
     prisma.greenBean.findMany({ orderBy: { id: "asc" } }),
     prisma.blend.findMany({ include: { recipe: true }, orderBy: { id: "asc" } }),
     prisma.pack.findMany({ orderBy: { id: "asc" } }),
     prisma.product.findMany({ orderBy: { id: "asc" } }),
+    prisma.supplier.findMany({ include: { greens: true, packs: true }, orderBy: { id: "asc" } }),
     prisma.ledgerEntry.findMany({ orderBy: [{ date: "asc" }, { at: "asc" }] }), // termasuk yang dihapus (deleted: true)
     prisma.activityLog.findMany({ orderBy: { at: "asc" } }),
   ]);
   return {
     format: "yantos-roastery-backup", version: 1, exportedAt: new Date().toISOString(), exportedBy: actor.name,
-    config, greens, blends, packs, products, ledger, activity,
+    config, greens, blends, packs, products, suppliers, ledger, activity,
   };
 }
 
@@ -53,7 +54,7 @@ export async function resetAll(actor: Actor, body: { pin?: unknown; confirm?: un
   const before = await dataSummary();
   await prisma.$transaction([
     prisma.$executeRawUnsafe(
-      'TRUNCATE TABLE "ledger_entries", "blend_recipe_items", "products", "blends", "green_beans", "packs", "config", "activity_logs"',
+      'TRUNCATE TABLE "ledger_entries", "blend_recipe_items", "products", "supplier_greens", "supplier_packs", "suppliers", "blends", "green_beans", "packs", "config", "activity_logs"',
     ),
     logActivity(prisma, actor, {
       action: "reset", entity: "data",

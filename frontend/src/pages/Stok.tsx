@@ -31,7 +31,8 @@ export default function Stok() {
   const sub = (id: string, r: (typeof rows)[number]) => {
     if (kind === "green") {
       const g = master?.greens.find((x) => x.id === id);
-      return g ? [g.category, g.supplier].filter(Boolean).join(" · ") : "";
+      const sup = (master?.suppliers || []).filter((s) => s.active && s.greenIds.includes(id)).map((s) => s.name).join(", ");
+      return g ? [g.category, sup].filter(Boolean).join(" · ") : "";
     }
     if (kind === "roasted" && r.yield) return `susut rata² ${pct(1 - r.yield)} dari ${nf(r.roastIn || 0)} kg roasting`;
     return "";

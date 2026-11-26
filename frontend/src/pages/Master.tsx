@@ -1,4 +1,4 @@
-// Port VIEWS.master: green bean, blend (+resep), kemasan, daftar harga, pengaturan.
+// Port VIEWS.master: green bean, blend (+resep), kemasan, supplier, daftar harga, pengaturan.
 // Item yang sudah punya riwayat hanya bisa diarsipkan supaya riwayat ledger tetap terbaca;
 // hapus permanen hanya untuk item yang belum pernah dipakai (server yang memeriksa).
 
@@ -7,16 +7,20 @@ import { deleteMasterItem, saveConfig, saveMasterItem, setMasterItemActive } fro
 import { useToast } from "../components/Toast";
 import { DeleteButton, ItemSelect, Loading, MoneyInput, Panel, Pill, Segmented } from "../components/ui";
 import { useAppData } from "../context/AppData";
-import type { Blend, Config, GreenBean, MasterData, Pack, Product } from "../types";
+import type { Blend, Config, GreenBean, MasterData, Pack, Product, Supplier } from "../types";
 import { moneyStr, nf, num, parseMoney, pct, rp, rps, sizeLabel } from "../utils/format";
 import { namer } from "../utils/ledger";
 
-type Sub = "green" | "blend" | "pack" | "product" | "set";
+type Sub = "green" | "blend" | "pack" | "supplier" | "product" | "set";
 type Kind = keyof MasterData;
-const KIND: Record<Exclude<Sub, "set">, Kind> = { green: "greens", blend: "blends", pack: "packs", product: "products" };
-const TITLE: Record<Exclude<Sub, "set">, string> = { green: "green bean", blend: "blend", pack: "kemasan", product: "harga produk" };
-const LIST_TITLE: Record<Exclude<Sub, "set">, string> = { green: "green bean", blend: "blend", pack: "kemasan", product: "harga" };
-type Item = GreenBean | Blend | Pack | Product;
+const KIND: Record<Exclude<Sub, "set">, Kind> = { green: "greens", blend: "blends", pack: "packs", supplier: "suppliers", product: "products" };
+const TITLE: Record<Exclude<Sub, "set">, string> = { green: "green bean", blend: "blend", pack: "kemasan", supplier: "supplier", product: "harga produk" };
+const LIST_TITLE: Record<Exclude<Sub, "set">, string> = { green: "green bean", blend: "blend", pack: "kemasan", supplier: "supplier", product: "harga" };
+type Item = GreenBean | Blend | Pack | Supplier | Product;
+
+/** Nama supplier yang memasok satu green bean / kemasan. */
+const suppliersOf = (m: MasterData, kind: "greenIds" | "packIds", id: string) =>
+  m.suppliers.filter((s) => s[kind].includes(id)).map((s) => s.name);
 
 export default function Master() {
   const { master } = useAppData();
@@ -61,7 +65,7 @@ export default function Master() {
 }
 
 function SubTabs({ value, onChange }: { value: Sub; onChange: (s: Sub) => void }) {
-  return <Segmented value={value} onChange={onChange} items={[["green", "Green bean"], ["blend", "Blend"], ["pack", "Kemasan"], ["product", "Daftar harga"], ["set", "Pengaturan"]]} />;
+  return <Segmented value={value} onChange={onChange} items={[["green", "Green bean"], ["blend", "Blend"], ["pack", "Kemasan"], ["supplier", "Supplier"], ["product", "Daftar harga"], ["set", "Pengaturan"]]} />;
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -70,12 +74,13 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function MasterForm({ sub, item, onDone }: { sub: Exclude<Sub, "set">; item?: Item; onDone: () => void }) {
-  const { master, meta, names, productCost, changed } = useAppData();
+  const { master, meta, productCost, changed } = useAppData();
   const toast = useToast();
   const x = (item || {}) as any;
   const [f, setF] = useState<Record<string, any>>(() => ({
     name: x.name || "", category: x.category || "Espresso", price: +x.price || 0, minKg: x.minKg || "", minRoastedKg: x.minRoastedKg || "",
-    supplier: x.supplier || "", cogs: +x.cogs || 0, unit: x.unit || "pcs", minQty: x.minQty || "",
+    phone: x.phone || "", address: x.address || "", note: x.note || "", greenIds: x.greenIds || [], packIds: x.packIds || [],
+    cogs: +x.cogs || 0, unit: x.unit || "pcs", minQty: x.minQty || "",
     kind: x.kind || "roasted", group: x.group || "Espresso", beanId: x.beanId || "", grams: x.grams || "", packId: x.packId || "",
   }));
   const [recipe, setRecipe] = useState<{ greenId: string; pct: string }[]>(() => (x.recipe || []).map((r: any) => ({ greenId: r.greenId, pct: String(r.pct) })));
@@ -88,13 +93,14 @@ function MasterForm({ sub, item, onDone }: { sub: Exclude<Sub, "set">; item?: It
   async function submit(ev: FormEvent) {
     ev.preventDefault();
     let body: Record<string, unknown>;
-    if (sub === "green") body = { name: f.name, category: f.category, price: f.price, minKg: num(f.minKg), minRoastedKg: num(f.minRoastedKg), supplier: f.supplier };
+    if (sub === "green") body = { name: f.name, category: f.category, price: f.price, minKg: num(f.minKg), minRoastedKg: num(f.minRoastedKg) };
     else if (sub === "blend") {
       const rs = recipe.map((r) => ({ greenId: r.greenId, pct: num(r.pct) })).filter((r) => r.greenId && r.pct > 0);
       const sum = rs.reduce((a, r) => a + r.pct, 0);
       if (rs.length && Math.abs(sum - 100) > 0.01) return toast(`Total resep ${nf(sum)}%, harus 100%.`, true);
       body = { name: f.name, cogs: f.cogs, minKg: num(f.minKg), recipe: rs };
     } else if (sub === "pack") body = { name: f.name, unit: f.unit || "pcs", price: f.price, minQty: num(f.minQty) };
+    else if (sub === "supplier") body = { name: f.name, phone: f.phone, address: f.address, note: f.note, greenIds: f.greenIds, packIds: f.packIds };
     else {
       if (!f.beanId) return toast("Pilih beans.", true);
       if (!(num(f.grams) > 0)) return toast("Isi ukuran gram.", true);
@@ -108,7 +114,7 @@ function MasterForm({ sub, item, onDone }: { sub: Exclude<Sub, "set">; item?: It
       toast(item ? "Perubahan tersimpan." : "Ditambahkan.");
       changed();
       onDone();
-      if (!item) { setF((s) => ({ ...s, name: "", price: 0, cogs: 0, minKg: "", minRoastedKg: "", minQty: "", supplier: "", grams: "", beanId: "" })); setRecipe([]); }
+      if (!item) { setF((s) => ({ ...s, name: "", price: 0, cogs: 0, minKg: "", minRoastedKg: "", minQty: "", phone: "", address: "", note: "", greenIds: [], packIds: [], grams: "", beanId: "" })); setRecipe([]); }
     } catch (e) {
       toast((e as Error).message, true);
     } finally {
@@ -128,10 +134,7 @@ function MasterForm({ sub, item, onDone }: { sub: Exclude<Sub, "set">; item?: It
         <Field label="Reorder green (kg)"><input className="input" type="number" step="any" min="0" {...text("minKg")} /></Field>
         <Field label="Reorder roasted (kg)"><input className="input" type="number" step="any" min="0" {...text("minRoastedKg")} /></Field>
       </div>
-      <Field label="Supplier utama">
-        <input className="input" list="suppList" {...text("supplier")} />
-        <datalist id="suppList">{names.suppliers.map((s) => <option key={s} value={s} />)}</datalist>
-      </Field>
+      {item && <p className="hint">Supplier: {suppliersOf(master, "greenIds", item.id).join(", ") || "belum ada"}. Atur di tab Supplier.</p>}
     </>
   );
   else if (sub === "blend") fields = (
@@ -164,6 +167,19 @@ function MasterForm({ sub, item, onDone }: { sub: Exclude<Sub, "set">; item?: It
         <Field label="Harga /pcs"><MoneyInput value={f.price} onChange={set("price")} /></Field>
       </div>
       <Field label="Reorder (pcs)"><input className="input" type="number" step="1" min="0" {...text("minQty")} /></Field>
+      {item && <p className="hint">Supplier: {suppliersOf(master, "packIds", item.id).join(", ") || "belum ada"}. Atur di tab Supplier.</p>}
+    </>
+  );
+  else if (sub === "supplier") fields = (
+    <>
+      <Field label="Nama supplier"><input className="input" {...text("name")} placeholder="Mas Heri" required /></Field>
+      <div className="row">
+        <Field label="No. HP / kontak"><input className="input" {...text("phone")} placeholder="Opsional" /></Field>
+        <Field label="Alamat"><input className="input" {...text("address")} placeholder="Opsional" /></Field>
+      </div>
+      <Field label="Catatan"><input className="input" {...text("note")} placeholder="Opsional" /></Field>
+      <PickList label="Green bean yang dipasok" items={master.greens} value={f.greenIds} onChange={set("greenIds")} />
+      <PickList label="Kemasan yang dipasok" items={master.packs} value={f.packIds} onChange={set("packIds")} />
     </>
   );
   else {
@@ -206,6 +222,31 @@ function MasterForm({ sub, item, onDone }: { sub: Exclude<Sub, "set">; item?: It
   );
 }
 
+/** Daftar centang green bean / kemasan untuk form supplier. Item arsip hanya tampil bila sudah tercentang. */
+function PickList({ label, items, value, onChange }: {
+  label: string; items: { id: string; name: string; active: boolean }[]; value: string[]; onChange: (ids: string[]) => void;
+}) {
+  const [q, setQ] = useState("");
+  const shown = items
+    .filter((x) => x.active !== false || value.includes(x.id))
+    .filter((x) => !q || x.name.toLowerCase().includes(q.toLowerCase()))
+    .sort((a, b) => a.name.localeCompare(b.name, "id"));
+  const toggle = (id: string) => onChange(value.includes(id) ? value.filter((v) => v !== id) : [...value, id]);
+  return (
+    <div className="field">
+      <span>{label} · {value.length} dipilih</span>
+      <input type="search" className="input" placeholder="Cari…" value={q} onChange={(e) => setQ(e.target.value)} aria-label={"Cari " + label} />
+      <div className="picklist">
+        {shown.length ? shown.map((x) => (
+          <label className="check" key={x.id}>
+            <input type="checkbox" checked={value.includes(x.id)} onChange={() => toggle(x.id)} /> {x.name}{x.active === false ? " (diarsipkan)" : ""}
+          </label>
+        )) : <span className="hint">Tidak ada yang cocok.</span>}
+      </div>
+    </div>
+  );
+}
+
 function MasterList({ sub, list, q, editId, onEdit, onCancelEdit }: {
   sub: Exclude<Sub, "set">; list: Item[]; q: string; editId: string | null; onEdit: (id: string) => void; onCancelEdit: () => void;
 }) {
@@ -222,10 +263,12 @@ function MasterList({ sub, list, q, editId, onEdit, onCancelEdit }: {
       (a.name || "").localeCompare(b.name || "", "id") || (a.grams || 0) - (b.grams || 0));
   if (!all.length) return <p className="empty">{q ? "Tidak ada yang cocok." : "Belum ada data. Isi formulir di samping."}</p>;
 
+  const listNames = (ids: string[], name: (id: string) => string) => ids.map(name).sort((a, b) => a.localeCompare(b, "id")).join(", ");
   const detail = (x: any) =>
-    sub === "green" ? [x.category, x.price ? rp(x.price) + "/kg" : "", x.minKg ? `reorder ${nf(x.minKg)} kg` : "", x.supplier].filter(Boolean).join(" · ")
+    sub === "green" ? [x.category, x.price ? rp(x.price) + "/kg" : "", x.minKg ? `reorder ${nf(x.minKg)} kg` : "", suppliersOf(master, "greenIds", x.id).join(", ")].filter(Boolean).join(" · ")
+    : sub === "supplier" ? [x.phone, x.greenIds.length ? `Bean: ${listNames(x.greenIds, n.g)}` : "", x.packIds.length ? `Kemasan: ${listNames(x.packIds, n.p)}` : "", x.greenIds.length + x.packIds.length ? "" : "belum ada item"].filter(Boolean).join(" · ")
     : sub === "blend" ? [x.cogs ? "COGS " + rp(x.cogs) + "/kg" : "", x.minKg ? `reorder ${nf(x.minKg)} kg` : "", (x.recipe || []).map((r: any) => `${n.g(r.greenId)} ${nf(r.pct)}%`).join(" + ")].filter(Boolean).join(" · ")
-    : sub === "pack" ? [x.unit || "pcs", x.price ? rp(x.price) + "/pcs" : "harga belum diisi", x.minQty ? `reorder ${nf(x.minQty, 0)}` : ""].filter(Boolean).join(" · ")
+    : sub === "pack" ? [x.unit || "pcs", x.price ? rp(x.price) + "/pcs" : "harga belum diisi", x.minQty ? `reorder ${nf(x.minQty, 0)}` : "", suppliersOf(master, "packIds", x.id).join(", ")].filter(Boolean).join(" · ")
     : `${x.group || ""} · ${rp(x.price)} · HPP ${rp(productCost(x))}${x.packId ? " · " + n.p(x.packId) : ""}`;
 
   const toggle = async (x: Item) => {

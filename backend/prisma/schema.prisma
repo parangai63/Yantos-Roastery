@@ -29,11 +29,11 @@ model GreenBean {
   price        Decimal @default(0) @db.Decimal(14, 2) // harga referensi per kg
   minKg        Decimal @default(0) @db.Decimal(10, 3) // reorder green
   minRoastedKg Decimal @default(0) @db.Decimal(10, 3) // reorder roasted
-  supplier     String  @default("")
   active       Boolean @default(true)
 
   recipeItems BlendRecipeItem[]
   products    Product[]         @relation("ProductBean")
+  suppliers   SupplierGreen[]
 
   @@map("green_beans")
 }
@@ -70,9 +70,49 @@ model Pack {
   minQty Decimal @default(0) @db.Decimal(10, 0)
   active Boolean @default(true)
 
-  products Product[]
+  products  Product[]
+  suppliers SupplierPack[]
 
   @@map("packs")
+}
+
+// Supplier (id s_*). Satu supplier bisa memasok banyak green bean & kemasan, dan satu item
+// bisa dipasok banyak supplier (tabel penghubung di bawah). Transaksi beli menyimpan
+// supplierId + nama supplier saat itu, jadi ganti nama supplier tidak mengubah riwayat.
+model Supplier {
+  id      String  @id
+  name    String
+  phone   String  @default("")
+  address String  @default("")
+  note    String  @default("")
+  active  Boolean @default(true)
+
+  greens SupplierGreen[]
+  packs  SupplierPack[]
+
+  @@map("suppliers")
+}
+
+model SupplierGreen {
+  supplierId String
+  supplier   Supplier  @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  greenId    String
+  green      GreenBean @relation(fields: [greenId], references: [id], onDelete: Cascade)
+
+  @@id([supplierId, greenId])
+  @@index([greenId])
+  @@map("supplier_greens")
+}
+
+model SupplierPack {
+  supplierId String
+  supplier   Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  packId     String
+  pack       Pack     @relation(fields: [packId], references: [id], onDelete: Cascade)
+
+  @@id([supplierId, packId])
+  @@index([packId])
+  @@map("supplier_packs")
 }
 
 enum ProductKind {

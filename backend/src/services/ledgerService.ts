@@ -6,7 +6,7 @@ import type { Prisma } from "@prisma/client";
 import prisma from "../prismaClient";
 import { badRequest, notFound } from "../lib/httpError";
 import { entryData, toEntry } from "../lib/mappers";
-import { LEDGER_TYPES, type LedgerType, type SaleItem, type StockKind } from "../engine/types";
+import { LEDGER_TYPES, type LedgerType, type Master, type SaleItem, type StockKind } from "../engine/types";
 import { CATS_IN, CATS_OUT, USE_CATS } from "../engine/vocab";
 import { loadState } from "./stateService";
 import { type Actor, logActivity } from "../lib/activity";
@@ -47,7 +47,15 @@ async function buildEntry(b: Body): Promise<Body> {
   const base = { type, date: date(b), note: opt(b, "note") };
   const payable = () => {
     const paid = b.paid !== false;
-    return { total: pos(b, "total", "Total"), supplier: opt(b, "supplier"), paid, paidDate: paid ? str(b, "paidDate") || base.date : undefined };
+    // Supplier dipilih dari master; namanya disimpan juga (snapshot) supaya riwayat tetap terbaca.
+    const supplierId = opt(b, "supplierId");
+    const sup = supplierId ? master.suppliers[supplierId] : undefined;
+    if (supplierId && !sup) throw badRequest("Supplier tidak ditemukan.");
+    if (sup && !sup.active) throw badRequest(`Supplier "${sup.name}" sudah diarsipkan.`);
+    return {
+      total: pos(b, "total", "Total"), supplierId: sup?.id, supplier: sup?.name,
+      paid, paidDate: paid ? str(b, "paidDate") || base.date : undefined,
+    };
   };
 
   switch (type) {
@@ -127,8 +135,30 @@ export async function createEntry(body: Body, actor: Actor) {
       data: { id, type: e.type as LedgerType, date: e.date as string, by: actor.name, byUserId: actor.id, data: entryData(e) },
     }),
     logActivity(prisma, actor, { action: "create", entity: "ledger", entityId: id, summary: "Mencatat " + entrySummary(e, master) }),
+    ...supplierLink(e, master, actor),
   ]);
   return toEntry(row);
+}
+
+// Beli dari supplier yang belum tercatat memasok item itu: hubungannya ditambahkan otomatis.
+function supplierLink(e: Body, master: Master, actor: Actor) {
+  const sup = typeof e.supplierId === "string" ? master.suppliers[e.supplierId] : undefined;
+  if (!sup) return [];
+  const supplierId = sup.id;
+  let added: string | undefined;
+  let op;
+  if (e.type === "green_in" && !sup.greenIds.includes(e.greenId as string)) {
+    op = prisma.supplierGreen.createMany({ data: [{ supplierId, greenId: e.greenId as string }], skipDuplicates: true });
+    added = master.greens[e.greenId as string]?.name;
+  } else if (e.type === "pack_in" && !sup.packIds.includes(e.packId as string)) {
+    op = prisma.supplierPack.createMany({ data: [{ supplierId, packId: e.packId as string }], skipDuplicates: true });
+    added = master.packs[e.packId as string]?.name;
+  }
+  if (!op) return [];
+  return [op, logActivity(prisma, actor, {
+    action: "update", entity: "suppliers", entityId: supplierId,
+    summary: `Menambah "${added}" ke daftar pasokan supplier "${sup.name}" (otomatis dari pembelian)`,
+  })];
 }
 
 // order "recent" = urut waktu input (dipakai "Aktivitas terbaru"), default urut tanggal transaksi.
@@ -142,19 +172,15 @@ export async function listEntries(q: { month?: string; types?: string[]; limit?:
   return rows.map(toEntry);
 }
 
-// Nama pelanggan & supplier yang pernah dipakai, untuk isian otomatis di form.
+// Nama pelanggan yang pernah dipakai, untuk isian otomatis di form. Supplier sudah punya master sendiri.
 export async function names() {
-  const rows = await prisma.ledgerEntry.findMany({
-    where: { deleted: false, type: { in: ["sale", "green_in", "pack_in"] } }, select: { type: true, data: true },
-  });
-  const cust = new Set<string>(), sup = new Set<string>();
+  const rows = await prisma.ledgerEntry.findMany({ where: { deleted: false, type: "sale" }, select: { data: true } });
+  const cust = new Set<string>();
   for (const r of rows) {
     const d = r.data as Prisma.JsonObject;
-    if (r.type === "sale" && typeof d.customer === "string" && d.customer) cust.add(d.customer);
-    if (r.type !== "sale" && typeof d.supplier === "string" && d.supplier) sup.add(d.supplier);
+    if (typeof d.customer === "string" && d.customer) cust.add(d.customer);
   }
-  const sort = (s: Set<string>) => [...s].sort((a, b) => a.localeCompare(b, "id"));
-  return { customers: sort(cust), suppliers: sort(sup) };
+  return { customers: [...cust].sort((a, b) => a.localeCompare(b, "id")) };
 }
 
 async function getRow(id: string) {

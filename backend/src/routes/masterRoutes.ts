@@ -2,7 +2,7 @@ import { Router } from "express";
 import { handle } from "../lib/httpError";
 import * as c from "../controllers/masterController";
 
-// Dipasang di /api/master. :kind = greens | blends | packs | products
+// Dipasang di /api/master. :kind = greens | blends | packs | products | suppliers
 const router = Router();
 
 router.get("/", handle(c.list));

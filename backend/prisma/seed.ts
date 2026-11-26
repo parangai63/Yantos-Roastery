@@ -6,7 +6,7 @@
 
 import { PrismaClient } from "@prisma/client";
 import { DEFAULT_DATA_DIR, loadLegacyExport } from "../src/lib/legacyExport";
-import { entryData, productData } from "../src/lib/mappers";
+import { entryData, productData, supplierCreate } from "../src/lib/mappers";
 
 const prisma = new PrismaClient();
 
@@ -17,6 +17,7 @@ async function main() {
   await prisma.$transaction(
     async (tx) => {
       await tx.ledgerEntry.deleteMany();
+      await tx.supplier.deleteMany(); // hubungan supplier ↔ item ikut terhapus (cascade)
       await tx.product.deleteMany();
       await tx.blendRecipeItem.deleteMany();
       await tx.blend.deleteMany();
@@ -32,7 +33,7 @@ async function main() {
       await tx.greenBean.createMany({
         data: Object.values(master.greens).map((g) => ({
           id: g.id, name: g.name, category: g.category || "", price: +g.price || 0, minKg: +g.minKg || 0,
-          minRoastedKg: +g.minRoastedKg || 0, supplier: g.supplier || "", active: g.active !== false,
+          minRoastedKg: +g.minRoastedKg || 0, active: g.active !== false,
         })),
       });
       await tx.pack.createMany({
@@ -49,6 +50,7 @@ async function main() {
         });
       }
       await tx.product.createMany({ data: Object.values(master.products).map((p) => ({ id: p.id, ...productData(p) })) });
+      for (const s of Object.values(master.suppliers)) await tx.supplier.create({ data: supplierCreate(s) });
 
       await tx.ledgerEntry.createMany({
         data: entries.map((e) => ({
@@ -62,7 +64,7 @@ async function main() {
 
   console.log(
     `Seed selesai dari ${dir}: ${Object.keys(master.greens).length} green, ${Object.keys(master.blends).length} blend, ` +
-      `${Object.keys(master.packs).length} kemasan, ${Object.keys(master.products).length} produk, ${entries.length} entri ledger.`,
+      `${Object.keys(master.packs).length} kemasan, ${Object.keys(master.products).length} produk, ${Object.keys(master.suppliers).length} supplier, ${entries.length} entri ledger.`,
   );
 }
 

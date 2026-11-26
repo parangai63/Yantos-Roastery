@@ -1,10 +1,10 @@
 // Data yang dipakai hampir semua halaman: master, kosakata, config, stok &
-// biaya saat ini, nama pelanggan/supplier, periode terpilih.
+// biaya saat ini, nama pelanggan, harga beli terakhir per supplier, periode terpilih.
 // `version` dinaikkan setelah setiap simpan supaya halaman memuat ulang laporan.
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { fetchBootstrap } from "../api/master";
-import type { Config, Costs, MasterData, Meta, Names, Product, StockKind } from "../types";
+import type { Buys, Config, Costs, MasterData, Meta, Names, Product, StockKind } from "../types";
 import { thisMonth } from "../utils/format";
 
 interface AppData {
@@ -13,6 +13,7 @@ interface AppData {
   config: Config | null;
   costs: Costs | null;
   names: Names;
+  buys: Buys;
   error: string | null;
   month: string;
   setMonth: (m: string) => void;
@@ -33,7 +34,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [meta, setMeta] = useState<Meta | null>(null);
   const [config, setConfig] = useState<Config | null>(null);
   const [costs, setCosts] = useState<Costs | null>(null);
-  const [names, setNames] = useState<Names>({ customers: [], suppliers: [] });
+  const [names, setNames] = useState<Names>({ customers: [] });
+  const [buys, setBuys] = useState<Buys>({ prices: {}, lastSupplier: {} });
   const [error, setError] = useState<string | null>(null);
   const [month, setMonth] = useState(thisMonth());
   const [version, setVersion] = useState(0);
@@ -46,7 +48,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     fetchBootstrap()
       .then((b) => {
         if (!alive) return;
-        setMaster(b.master); setMeta(b.meta); setConfig(b.config); setCosts(b.costs); setNames(b.names); setError(null);
+        setMaster(b.master); setMeta(b.meta); setConfig(b.config); setCosts(b.costs); setNames(b.names); setBuys(b.buys); setError(null);
       })
       .catch((e: Error) => alive && setError(e.message));
     return () => { alive = false; };
@@ -63,7 +65,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   }, [costs]);
 
   return (
-    <Ctx.Provider value={{ master, meta, config, costs, names, error, month, setMonth, version, changed, responseCache, ...helpers }}>
+    <Ctx.Provider value={{ master, meta, config, costs, names, buys, error, month, setMonth, version, changed, responseCache, ...helpers }}>
       {children}
     </Ctx.Provider>
   );
